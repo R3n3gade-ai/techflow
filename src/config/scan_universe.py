@@ -1,27 +1,34 @@
 """
-ARMS Configuration: Systematic Scan Engine Universe
+ARMS Configuration: Systematic Scan Universe
 
-This file defines the universe of companies to be scanned weekly by the
-Systematic Scan Engine. The engine will evaluate each company against
-SENTINEL Gates 1 and 2.
+This file defines the universe of tickers that the Systematic Scan Engine
+monitors every Monday morning at 6:00 AM CT.
 
-The universe is focused on AI infrastructure and enabling technologies.
-This list is maintained by the PM.
+The universe is focused on AI infrastructure: semiconductors, networking,
+power/cooling, and data center REITs.
 
 Reference: arms_fsd_master_build_v1.1.md, Section 11.3
 """
 
-# The universe is a simple list of ticker symbols.
-SCAN_UNIVERSE = [
+# Initial AI Infrastructure Universe for Phase 1
+AI_INFRASTRUCTURE_UNIVERSE = [
     # Semiconductors (Fabless & Foundry)
-    "NVDA", "AMD", "AVGO", "QCOM", "MRVL", "TSM", "INTC", "MU",
+    "NVDA", "AMD", "AVGO", "MRVL", "TSM", "ARM", "INTC", "MU", "SKHYNIX", 
+    "ALAB", "KLAC", "LRCX", "ASML",
     
-    # AI Infrastructure & Networking
-    "ANET", "SMCI", "DELL", "HPE", "VRT", "ETN", "MSFT", "GOOGL", "AMZN", "META",
+    # Networking & Connectivity
+    "ANET", "CSCO", "JNPR", "PSTG", "NTAP",
     
-    # EDA & IP
-    "CDNS", "SNPS", "ARM",
+    # Power & Cooling
+    "ETN", "VRT", "ST", "HUBB", "WWD",
     
-    # Other Enabling Tech
-    "ALAB", "PLTR"
+    # Data Center REITs & Hyperscalers
+    "EQIX", "DLR", "AMZN", "MSFT", "GOOGL", "META", "ORCL",
+    
+    # Infrastructure Software & Services
+    "PLTR", "SNOW", "DDOG", "CRWD", "PANW"
 ]
+
+# Total tickers: 35+ companies
+# Scan cost estimation: 35 tickers * $0.40/call = $14 per weekly sweep.
+# Total monthly scan budget: ~$60.

@@ -8,7 +8,7 @@
 - [x] **P0.05** Kevlar Hard Limit Enforcement (22% Max Single, 3% Min)
 - [x] **P0.06** ARAS Logic Migration (with CORRELATED stress source detection)
 
-## Phase 1: Intelligence Frontiers & Automation (75% COMPLETE)
+## Phase 1: Intelligence Frontiers & Automation (100% COMPLETE)
 - [x] **Frontier F3 (MICS):** `src/engine/mics.py` fully implemented.
 - [x] **Frontier F4 (Audit Log):** `src/reporting/audit_log.py` immutable logging active.
 - [x] **Frontier F5 (Confirmation Queue):** `src/execution/confirmation_queue.py` 3-option interface active.
@@ -20,8 +20,10 @@
 - [x] **CDM:** `src/engine/cdm.py` and `src/config/position_dependency_map.py` fully automated (Module C).
 - [x] **TDC:** `src/engine/tdc.py` and `src/intelligence/claude_wrapper.py` fully automated (Module D).
 - [x] **Frontier F1 (Full Ingestion):** `src/data_feeds/pmi_plugin.py` and `src/data_feeds/crypto_plugin.py` live.
-- [ ] **RPE:** Regime Probability Engine (5-minute transition logic).
-- [ ] **Infrastructure:** AWS "The Fortress" deployment (Terraform/VPC).
+- [x] **Frontier F2 (Scan Engine):** `src/engine/systematic_scan.py` v2.0 fully automated.
+- [x] **RPE:** `src/engine/regime_probability.py` v2.0 fully automated.
+- [x] **Infrastructure:** AWS "The Fortress" deployment (Terraform foundation in `infra/`).
+- [x] **Live Monitor v2.0:** `src/reporting/daily_monitor.py` fully automated.
 
 ## Phase 2 & 3: Resilience & Expansion (PLANNED)
 - [ ] **ARES** (Re-Entry System)

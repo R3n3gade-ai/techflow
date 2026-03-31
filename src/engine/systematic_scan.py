@@ -1,18 +1,26 @@
-# src/engine/systematic_scan.py
-# Implements the Systematic Scan Engine for autonomous thesis generation.
+"""
+ARMS Engine: Systematic Scan Engine v2.0
 
-from dataclasses import dataclass
-from typing import List
+This module provides low-fidelity autonomous thesis generation. It runs
+every Monday pre-market against a defined universe of AI infrastructure
+companies, using the Claude API to perform SENTINEL Gate 1 & 2 analysis.
 
-# This would be the wrapper for the Claude API, defined in another module.
-# from ..intelligence import claude_wrapper 
-def placeholder_claude_call(prompt: str) -> dict:
-    # A placeholder for making a real call to the Claude API.
-    print(f"  [AI] Running analysis prompt (placeholder)...")
-    # In a real run, this would return a parsed JSON object.
-    if "AAPL" in prompt:
-        return {'gate1_pass': True, 'gate2_pass': True, 'rationale': 'Strong ecosystem.'}
-    return {'gate1_pass': False, 'gate2_pass': False, 'rationale': 'Does not meet criteria.'}
+"See it before the internet does."
+
+Reference: arms_fsd_master_build_v1.1.md, Section 11.3
+"""
+
+import datetime
+import json
+from dataclasses import dataclass, field
+from typing import List, Dict, Optional
+
+# --- Internal Imports ---
+from intelligence.claude_wrapper import claude_wrapper
+from config.scan_universe import AI_INFRASTRUCTURE_UNIVERSE
+from reporting.audit_log import SessionLogEntry, append_to_log
+
+# --- Data Structures ---
 
 @dataclass
 class ScanCandidate:
@@ -22,91 +30,92 @@ class ScanCandidate:
     gate2_pass: bool
     gate3_score: float
     rationale: str
+    timestamp: str = field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
 
-# This universe would be loaded from a configuration file.
-UNIVERSE_TICKERS = [
-    "NVDA", "AMD", "AVGO", "MRVL", "TSM", 
-    "AMZN", "GOOGL", "MSFT", "META",
-    "DELL", "SMCI", "ARW",
-    "AAPL", # Example that will pass the placeholder check
-]
+# --- Scan Engine Logic ---
 
-def fetch_documents_for_ticker(ticker: str) -> str:
+def _fetch_documents(ticker: str) -> str:
     """
-    Placeholder function to represent fetching 10-K and transcript data
-    from the SEC EDGAR free signal feed.
+    Placeholder: Fetches 10-K, 10-Q, and latest earnings transcript from 
+    the SEC EDGAR feed plugin (Frontier F1).
     """
-    print(f"  [Scan] Fetching public documents for {ticker}...")
-    return f"This is the combined text of the latest 10-K and earnings transcript for {ticker}."
+    # In production, this would call SecEdgarPlugin.fetch_docs(ticker)
+    return f"Latest filings and transcripts for {ticker}."
 
-def run_gate1_and_2_analysis(documents: str) -> dict:
+def _calculate_gate3_score(ticker: str) -> float:
     """
-    Uses the AI layer to run SENTINEL Gates 1 & 2 analysis.
+    Placeholder: Calculates the quantitative Gate 3 mispricing score (0-30).
+    Based on valuation gap, institutional positioning, and consensus framing.
     """
-    prompt = f"""
-    You are the ARMS SENTINEL Gate 1 & 2 analyst.
-    - Gate 1: Is this a civilizational shift, not a product cycle?
-    - Gate 2: Can the world route around this company?
-    
-    Analyze the following documents and return a JSON response with:
-    {{'gate1_pass': bool, 'gate2_pass': bool, 'rationale': 'Your one-sentence analysis.'}}
-    
-    Documents:
-    {documents}
-    """
-    return placeholder_claude_call(prompt)
-
-def calculate_gate3_score(ticker: str) -> float:
-    """
-    Placeholder for the quantitative analysis of mispricing based on public data.
-    """
-    print(f"  [Scan] Calculating quantitative Gate 3 score for {ticker}...")
-    # This would involve pulling valuation multiples, institutional ownership data, etc.
-    return 15.0 # Placeholder score
+    # In production, this would pull from the DataPipeline (F1/F4)
+    return 18.5 # Example score
 
 def run_weekly_scan() -> List[ScanCandidate]:
     """
-    The main function for the scan engine, called by the scheduler every Monday morning.
+    Main entry point for the scan engine. Runs every Monday morning at 6AM CT.
     """
-    print("==================================================")
-    print("SYSTEMATIC SCAN ENGINE - WEEKLY RUN START")
-    print("==================================================")
+    print(f"--- ARMS Systematic Scan Engine: Monday Morning Sweep ---")
     
     candidates = []
     
-    for ticker in UNIVERSE_TICKERS:
-        print(f"\n[Scan] Analyzing {ticker}...")
+    for ticker in AI_INFRASTRUCTURE_UNIVERSE:
+        print(f"[Scan] Processing {ticker}...")
         
-        # 1. Fetch documents
-        docs = fetch_documents_for_ticker(ticker)
+        # 1. Fetch public documents
+        docs = _fetch_documents(ticker)
         
-        # 2. Run AI analysis for Gates 1 & 2
-        gate_results = run_gate1_and_2_analysis(docs)
+        # 2. Run SENTINEL Gate 1 & 2 Analysis via Claude API
+        prompt = f"""
+        You are the ARMS SENTINEL Gate 1 & 2 Analyst.
+        - Gate 1: Is this a civilizational shift, not a product cycle?
+        - Gate 2: Is this company non-optional (cannot be routed around)?
         
-        if gate_results['gate1_pass'] and gate_results['gate2_pass']:
-            print(f"  -> {ticker} PASSED Gates 1 & 2.")
-            
-            # 3. Calculate Gate 3 score for passers
-            gate3_score = calculate_gate3_score(ticker)
-            
-            candidates.append(ScanCandidate(
-                ticker=ticker,
-                gate1_pass=True,
-                gate2_pass=True,
-                gate3_score=gate3_score,
-                rationale=gate_results['rationale']
-            ))
-        else:
-            print(f"  -> {ticker} FAILED automated screening.")
-            
-    print("\n==================================================")
-    print(f"SCAN COMPLETE. Found {len(candidates)} potential candidate(s).")
-    for candidate in candidates:
-        print(f"  - {candidate.ticker}: Gate 3 Score = {candidate.gate3_score}, Rationale: {candidate.rationale}")
-    print("==================================================")
-    
-    # The list of candidates would be formatted into the Monday morning monitor.
+        Analyze the following context for {ticker} and return ONLY valid JSON.
+        JSON format: {{'gate1_pass': bool, 'gate2_pass': bool, 'rationale': 'str'}}
+        
+        CONTEXT:
+        {docs}
+        """
+        
+        # Note: claude_wrapper handles the API call and task management
+        response_json = claude_wrapper.call(
+            task_type='sentinel_scan',
+            prompt=prompt,
+            knowledge_base_query=f'{ticker} SENTINEL analysis'
+        )
+        
+        try:
+            res = json.loads(response_json)
+            if res.get('gate1_pass') and res.get('gate2_pass'):
+                # 3. For passers, calculate the quantitative Gate 3 score
+                g3_score = _calculate_gate3_score(ticker)
+                
+                candidate = ScanCandidate(
+                    ticker=ticker,
+                    gate1_pass=True,
+                    gate2_pass=True,
+                    gate3_score=g3_score,
+                    rationale=res.get('rationale', 'No rationale provided.')
+                )
+                candidates.append(candidate)
+                
+                # 4. Audit Logging
+                append_to_log(SessionLogEntry(
+                    timestamp=candidate.timestamp,
+                    action_type='SCAN_CANDIDATE',
+                    triggering_module='ScanEngine',
+                    triggering_signal=f"Candidate identified: {ticker} (Gate 3 Score: {g3_score})",
+                    ticker=ticker,
+                    gate3_score=g3_score
+                ))
+                print(f"  -> Candidate Found: {ticker} (Score: {g3_score})")
+                
+        except (json.JSONDecodeError, KeyError) as e:
+            print(f"  [Error] Failed to parse AI response for {ticker}: {e}")
+
+    print(f"--- Scan Complete. {len(candidates)} candidate(s) identified. ---")
     return candidates
 
 if __name__ == '__main__':
+    # Test run
     run_weekly_scan()

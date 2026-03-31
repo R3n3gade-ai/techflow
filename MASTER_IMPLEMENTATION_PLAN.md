@@ -31,8 +31,8 @@
 - [x] **CCM** (Conviction Calibration Module): `src/engine/conviction_calibration.py` learning loop complete.
 - [x] **TRP** (Thesis Retirement Protocol): `src/engine/thesis_retirement.py` Tier 1 logic complete.
 - [x] **MC-RSS** (Retail Sentiment Score): `src/engine/mc_rss.py` contrarian logic complete.
-- [ ] **Incapacitation Protocol**
-- [ ] **Live Monitor v2.0 Update:** (Integrating ARES/CDF into dashboard).
+- [x] **Incapacitation Protocol**: `src/engine/incapacitation.py` safety timers complete.
+- [ ] **Live Monitor v2.0 Update:** (Integrating ARES/CDF/RSS/Incap into dashboard).
 
 ---
 

@@ -8,19 +8,18 @@ entities.
 
 This is the "data layer" for the Thesis Dependency Checker (TDC).
 
+"The system catches what the PM should not have to catch."
+
 Reference: ARMS Module Specification — CDM + TDC | Addendum 2 to FSD v1.1
 """
 
+import datetime
 from dataclasses import dataclass, field
 from typing import List, Dict, Literal
-import sys
-import os
-from datetime import datetime
 
-# Add the config directory to the Python path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'config')))
-
-from position_dependency_map import POSITION_DEPENDENCIES, ALERT_SENSITIVITY_MAPPING
+# --- Internal Imports ---
+from config.position_dependency_map import POSITION_DEPENDENCIES, ALERT_SENSITIVITY_MAPPING
+from reporting.audit_log import SessionLogEntry, append_to_log
 
 # --- Data Structures ---
 
@@ -30,7 +29,7 @@ class NewsItem:
     source: str  # e.g., 'SEC_EDGAR', 'NewsAPI'
     headline: str
     content: str
-    timestamp: str
+    timestamp: str # ISO format
     entities: List[str]  # Pre-processed named entities found in the content
     event_type: Literal[
         'LEGAL_RULING', 'REGULATORY_FILING', 'EARNINGS_WARNING', 'MA_ANNOUNCEMENT',
@@ -47,60 +46,107 @@ class CdmAlert:
     severity: Literal['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']
     headline: str
     source_item: NewsItem
-    timestamp: str = field(default_factory=lambda: datetime.utcnow().isoformat())
+    timestamp: str = field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
 
 # --- CDM Engine Logic ---
 
-def find_dependent_tickers(entity: str) -> List[str]:
-    """Finds all tickers in the map that depend on the given entity."""
+def _find_dependent_tickers(entity: str) -> List[str]:
+    """
+    Finds all tickers in the map that depend on the given entity.
+    Includes smart matching for common name aliases (e.g., Google/Alphabet).
+    """
     affected_tickers = []
     normalized_entity = entity.lower()
     
+    # Simple alias mapping
+    aliases = {
+        'google': 'alphabet',
+        'alphabet': 'google',
+        'aws': 'amazon',
+        'amazon': 'aws'
+    }
+    
+    match_candidates = [normalized_entity]
+    if normalized_entity in aliases:
+        match_candidates.append(aliases[normalized_entity])
+    
     for ticker, dependencies in POSITION_DEPENDENCIES.items():
+        # Combine all dependency lists for a full scan
         all_deps = (
             dependencies.get('primary_demand_drivers', []) +
             dependencies.get('thesis_enablers', []) +
             dependencies.get('regulatory_counterparties', [])
         )
-        if any(normalized_entity in dep.lower() for dep in all_deps):
+        
+        # Check if any candidate matches any dependency
+        if any(any(c in dep.lower() for c in match_candidates) for dep in all_deps):
             affected_tickers.append(ticker)
             
-    return affected_tickers
+    return list(set(affected_tickers)) # Remove duplicates
 
 def run_cdm_scan(news_items: List[NewsItem]) -> List[CdmAlert]:
     """
     Scans a list of news items and generates CDM alerts for dependent positions.
+    Propagates events based on position-specific sensitivity.
     """
     all_alerts = []
+    
     for item in news_items:
-        if item.event_type == 'POSITIVE_DEVELOPMENT' or item.event_type == 'UNKNOWN':
-            continue # Per spec, positive/unknown events do not generate alerts
+        # Per spec, positive/unknown events do not generate alerts for propagation
+        if item.event_type in ['POSITIVE_DEVELOPMENT', 'UNKNOWN']:
+            continue 
 
         for entity in item.entities:
-            dependent_tickers = find_dependent_tickers(entity)
+            dependent_tickers = _find_dependent_tickers(entity)
             
             for ticker in dependent_tickers:
                 sensitivity = POSITION_DEPENDENCIES[ticker]['alert_sensitivity']
                 triggering_events = ALERT_SENSITIVITY_MAPPING.get(sensitivity, [])
                 
                 if item.event_type in triggering_events:
-                    severity = sensitivity # For simplicity, alert severity matches position sensitivity
-                    if item.event_type == 'LEGAL_RULING': # Per spec, this is CRITICAL
+                    # Severity mapping logic:
+                    # 1. Start with sensitivity level
+                    severity = sensitivity 
+                    # 2. Per spec: LEGAL_RULING is always CRITICAL
+                    if item.event_type == 'LEGAL_RULING':
                         severity = 'CRITICAL'
 
                     alert = CdmAlert(
                         ticker=ticker,
                         triggering_entity=entity,
                         event_type=item.event_type,
-                        severity=severity,
+                        severity=severity, # type: ignore
                         headline=item.headline,
                         source_item=item
                     )
                     all_alerts.append(alert)
-                    # TODO: Integrate with audit log
-                    print(f"AUDIT LOG: CDM Alert Generated: {ticker} <-- {entity} ({item.event_type})")
+                    
+                    # Log the propagation event to the audit trail
+                    append_to_log(SessionLogEntry(
+                        timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                        action_type='CDM_PROPAGATION',
+                        triggering_module='CDM',
+                        triggering_signal=f"{item.event_type} at {entity} affects {ticker}.",
+                        ticker=ticker
+                    ))
+                    
+                    print(f"[CDM] Alert Generated: {ticker} <-- {entity} ({item.event_type})")
 
     return all_alerts
 
-# This file is intended to be imported as a module.
-# The test cases have been moved to tests/test_cdm_tdc.py
+if __name__ == '__main__':
+    print("ARMS CDM Module Active (Simulation Mode)")
+    
+    # Simulate the Google Antitrust event for MU
+    mock_item = NewsItem(
+        source='NewsAPI',
+        headline='DOJ Pursuing Structural Remedies Against Google',
+        content='The DOJ is considering a breakup of Google following antitrust ruling...',
+        timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        entities=['Google'],
+        event_type='LEGAL_RULING'
+    )
+    
+    alerts = run_cdm_scan([mock_item])
+    for a in alerts:
+        print(f"Propagated to: {a.ticker} (Severity: {a.severity})")

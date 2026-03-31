@@ -5,23 +5,23 @@ from typing import List
 
 from .interfaces import FeedPlugin, SignalRecord
 from .fred_plugin import FredPlugin
-# As we create more plugins (e.g., SecEdgarPlugin), they will be imported here.
+from .pmi_plugin import PmiPlugin
+from .crypto_plugin import CryptoPlugin
 
 class DataPipeline:
     """
     Initializes and runs all available data feed plugins.
     
-    NOTE: The complex plugin discovery logic has been replaced with a simpler,
-    hardcoded list of plugins to ensure stability and resolve import issues.
-    This is a robust and sufficient approach for the Phase 1 build.
+    NOTE: This pipeline follows the "receptor" pattern from FSD v1.1.
+    New plugins (e.g., SecEdgarPlugin) will be added here as they are developed.
     """
     
     def __init__(self):
-        # We explicitly list the plugins to load. This is more stable than
-        # dynamic discovery and avoids complex pathing issues.
+        # Explicitly list the plugins to load for Phase 1.
         self.plugins: List[FeedPlugin] = [
             FredPlugin(),
-            # e.g., SecEdgarPlugin() would be added here later
+            PmiPlugin(),
+            CryptoPlugin()
         ]
         print(f"[DataPipeline] Initialized with {len(self.plugins)} specified plugin(s).")
 
@@ -42,10 +42,3 @@ class DataPipeline:
         
         print(f"[DataPipeline] Run complete. Total records fetched: {len(all_signals)}")
         return all_signals
-
-# Example of how this would be used by the main ARMS application scheduler:
-#
-# def scheduled_data_ingestion_task():
-#     pipeline = DataPipeline()
-#     signals = pipeline.run_all_feeds()
-#     process_signals(signals)

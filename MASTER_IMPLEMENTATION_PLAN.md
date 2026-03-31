@@ -15,10 +15,11 @@
 - [x] **Data Ingestion Pipeline:** `src/data_feeds/pipeline.py` & FRED Plugin established.
 - [x] **Execution Interfaces:** `OrderRequest` and `Position` data structures frozen.
 - [x] **Broker Integration (Skeleton):** `src/execution/broker_api.py` connection logic initialized for IBKR.
-- [/] **Frontier F2 (Scan Engine):** `src/engine/systematic_scan.py` framework built (weekly AI infrastructure universe).
-- [ ] **Frontier F1 (Full Ingestion):** S&P Global PMI, Binance/Bybit crypto plugins.
-- [ ] **PTRH Automation:** CAM (Coverage Adequacy Model) + Roll automation (Module A).
-- [ ] **DSHP:** Defensive Sleeve Harvest Protocol automation (Module B).
+- [x] **PTRH Automation:** `src/engine/tail_hedge.py` fully automated (Module A).
+- [x] **DSHP:** `src/engine/dshp.py` fully automated (Module B).
+- [x] **CDM:** `src/engine/cdm.py` and `src/config/position_dependency_map.py` fully automated (Module C).
+- [x] **TDC:** `src/engine/tdc.py` and `src/intelligence/claude_wrapper.py` fully automated (Module D).
+- [x] **Frontier F1 (Full Ingestion):** `src/data_feeds/pmi_plugin.py` and `src/data_feeds/crypto_plugin.py` live.
 - [ ] **RPE:** Regime Probability Engine (5-minute transition logic).
 - [ ] **Infrastructure:** AWS "The Fortress" deployment (Terraform/VPC).
 

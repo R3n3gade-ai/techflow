@@ -29,7 +29,7 @@
 - [x] **ARES** (Re-Entry System): `src/engine/ares.py` Tier 0 logic complete.
 - [x] **CDF** (Conviction Decay Function): `src/engine/cdf.py` Day 45/90/135 logic complete.
 - [x] **CCM** (Conviction Calibration Module): `src/engine/conviction_calibration.py` learning loop complete.
-- [ ] **TRP** (Thesis Retirement Protocol)
+- [x] **TRP** (Thesis Retirement Protocol): `src/engine/thesis_retirement.py` Tier 1 logic complete.
 - [ ] **MC-RSS** (Retail Sentiment Score)
 - [ ] **Incapacitation Protocol**
 - [ ] **Live Monitor v2.0 Update:** (Integrating ARES/CDF into dashboard).

@@ -25,14 +25,20 @@
 - [x] **Infrastructure:** AWS "The Fortress" deployment (Terraform foundation in `infra/`).
 - [x] **Live Monitor v2.0:** `src/reporting/daily_monitor.py` fully automated.
 
-## Phase 2: Resilience & Expansion (ACTIVE DEVELOPMENT)
+## Phase 2: Resilience & Expansion (100% COMPLETE)
 - [x] **ARES** (Re-Entry System): `src/engine/ares.py` Tier 0 logic complete.
 - [x] **CDF** (Conviction Decay Function): `src/engine/cdf.py` Day 45/90/135 logic complete.
 - [x] **CCM** (Conviction Calibration Module): `src/engine/conviction_calibration.py` learning loop complete.
 - [x] **TRP** (Thesis Retirement Protocol): `src/engine/thesis_retirement.py` Tier 1 logic complete.
 - [x] **MC-RSS** (Retail Sentiment Score): `src/engine/mc_rss.py` contrarian logic complete.
 - [x] **Incapacitation Protocol**: `src/engine/incapacitation.py` safety timers complete.
-- [ ] **Live Monitor v2.0 Update:** (Integrating ARES/CDF/RSS/Incap into dashboard).
+- [x] **Live Monitor v2.1 Update**: `src/reporting/daily_monitor.py` Phase 2 integration complete.
+
+## Phase 3: Platform & Resilience (PLANNED)
+- [ ] **PID** (Proactive Intelligence Digest): Monthly LP reporting.
+- [ ] **AUP** (Asymmetric Upside Protocol): SLOF expansion logic.
+- [ ] **LAEP v2.0**: Execution style optimization.
+- [ ] **Performance Attribution**: Module-level alpha tracking.
 
 ---
 

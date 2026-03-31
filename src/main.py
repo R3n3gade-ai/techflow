@@ -1,84 +1,157 @@
-# src/main.py
-# The main application entry point for the Achelion ARMS system.
-# This file orchestrates all the different modules.
+"""
+ACHELION ARMS v1.1 - FULL INTEGRATION CYCLE
+"Silence is trust in the architecture."
 
-from datetime import datetime, timezone
+This script executes a complete ARMS operational cycle, integrating all 
+Phase 1, 2, and 3 modules. It simulates the 6:00 AM CT sweep.
+"""
+
+import datetime
+import json
+from typing import List, Dict, Any
+
+# --- 1. Core Services & Interfaces ---
 from data_feeds.pipeline import DataPipeline
-from engine.mics import calculate_mics, SentinelGateInputs
-from execution.confirmation_queue import ConfirmationQueue, QueuedAction
 from execution.broker_api import IBKRBroker
+from execution.confirmation_queue import ConfirmationQueue, QueuedAction
 from reporting.audit_log import SessionLogEntry, append_to_log
 from execution.interfaces import OrderRequest
 
-def run_daily_cycle():
-    """
-    A simplified representation of the main operational loop that ARMS
-    would run, demonstrating the integration of the audit log.
-    """
-    log_file = "achelion_arms/logs/session_log.jsonl"
-    print("==================================================")
-    print("ACHELION ARMS - DAILY CYCLE START")
-    print(f"Logging all actions to: {log_file}")
-    print("==================================================")
-    append_to_log(SessionLogEntry(timestamp=datetime.now(timezone.utc).isoformat(), action_type='CYCLE_START', triggering_module='main', triggering_signal='Daily cycle initiated.'), log_file)
+# --- 2. Engine Modules ---
+from engine.mics import calculate_mics, SentinelGateInputs
+from engine.cam import CamInputs, calculate_required_notional
+from engine.tail_hedge import run_ptrh_module, OptionsPosition
+from engine.dshp import run_dshp_check, DefensivePosition
+from engine.cdm import run_cdm_scan, NewsItem
+from engine.tdc import run_thesis_review
+from engine.regime_probability import calculate_rpe
+from engine.ares import run_ares_check
+from engine.cdf import calculate_position_decay
+from engine.mc_rss import calculate_mc_rss
+from engine.incapacitation import run_incapacitation_check
+from engine.asymmetric_upside import run_aup_check
+from reporting.daily_monitor import generate_daily_monitor
 
-    # 1. Initialize all core services
-    print("\n[1. Initializing Services...]")
-    append_to_log(SessionLogEntry(timestamp=datetime.now(timezone.utc).isoformat(), action_type='INITIALIZATION', triggering_module='main', triggering_signal='Initializing all core services.'), log_file)
+def run_full_arms_cycle():
+    log_file = "achelion_arms/logs/session_log.jsonl"
+    now = datetime.datetime.now(datetime.timezone.utc)
+    
+    print("\n" + "="*60)
+    print("ACHELION ARMS v1.1 - FULL OPERATIONAL SWEEP")
+    print(f"Cycle Initiated: {now.isoformat()}")
+    print("="*60)
+    
+    # --- PHASE 0: INITIALIZATION ---
+    print("\n[STEP 0] Initializing ARMS Services...")
     data_pipeline = DataPipeline()
     broker = IBKRBroker()
     confirmation_queue = ConfirmationQueue()
     broker.connect()
-
-    # 2. Run the Data Ingestion Pipeline (The Senses)
-    print("\n[2. Running Data Ingestion Pipeline...]")
-    signals = data_pipeline.run_all_feeds()
-    append_to_log(SessionLogEntry(timestamp=datetime.now(timezone.utc).isoformat(), action_type='DATA_INGESTION', triggering_module='DataPipeline', triggering_signal=f'Successfully fetched {len(signals)} signal records.'), log_file)
-
-    # 3. Placeholder for a System Action (The Brain making a decision)
-    print("\n[3. Simulating MICS Calculation...]")
-    sentinel_data = SentinelGateInputs(
-        gate3_raw_score=22, source_category='Cat B', fem_impact='NORMAL->WATCH', regime_at_entry='NEUTRAL'
-    )
-    mics_result = calculate_mics(sentinel_data)
-    print(f" -> MICS Calculation Complete. Result: C-Level {mics_result.conviction_level} (Raw: {mics_result.raw_score:.2f})")
-    append_to_log(SessionLogEntry(timestamp=datetime.now(timezone.utc).isoformat(), action_type='MICS_CALCULATION', triggering_module='MICS', triggering_signal='New SENTINEL candidate scored.', mics_score=mics_result.raw_score, gate3_score=22, source_category='Cat B'), log_file)
-
-    # 4. Queue a Tier 1 Action for PM approval
-    print("\n[4. Queuing a Tier 1 Action...]")
-    order_to_approve = OrderRequest(
-        ticker="NVDA", action="BUY", quantity=100, order_type="VWAP",
-        triggering_module="SENTINEL", triggering_signal="New position passed all 6 gates.", tier=1
-    )
-    queued_action = QueuedAction(
-        action_id="sentinel_nvda_buy_001", item=order_to_approve, triggering_module="SENTINEL",
-        rationale="New position passed all gates, awaiting PM confirmation.", queued_at=datetime.now(timezone.utc), veto_window_hours=4.0
-    )
-    confirmation_queue.add_action(queued_action)
-    append_to_log(SessionLogEntry(timestamp=datetime.now(timezone.utc).isoformat(), action_type='TIER1_ACTION_QUEUED', triggering_module='SENTINEL', triggering_signal=f'Queued action {queued_action.action_id} for {order_to_approve.ticker}.', ticker=order_to_approve.ticker), log_file)
-
-    # 5. Check the Confirmation Queue (The Dashboard)
-    print("\n[5. Checking for Open Actions...]")
-    open_items = confirmation_queue.get_open_items()
-    print(f" -> Found {len(open_items)} open action(s) for PM review.")
-
-    # 6. Simulate a PM response and execute
-    print("\n[6. Simulating PM Approval and Execution...]")
-    if open_items:
-        action_id = open_items[0].action_id
-        confirmation_queue.submit_response(action_id, 'EXECUTE')
-        append_to_log(SessionLogEntry(timestamp=datetime.now(timezone.utc).isoformat(), action_type='PM_CONFIRMATION', triggering_module='ConfirmationQueue', triggering_signal=f'PM confirmed action {action_id} with response EXECUTE.'), log_file)
-        
-        order_to_execute = open_items[0].item
-        order_id = broker.submit_order(order_to_execute)
-        append_to_log(SessionLogEntry(timestamp=datetime.now(timezone.utc).isoformat(), action_type='ORDER_SUBMITTED', triggering_module='BrokerAPI', triggering_signal=f'Broker order {order_id} submitted.', ticker=order_to_execute.ticker), log_file)
-
-    # 7. Disconnect and end cycle
-    print("\n[7. Disconnecting Services...]")
-    broker.disconnect()
     
-    print("\n==================================================")
-    print("ACHELION ARMS - DAILY CYCLE COMPLETE")
-    print("==================================================")
-    append_to_log(SessionLogEntry(timestamp=datetime.now(timezone.utc).isoformat(), action_type='CYCLE_END', triggering_module='main', triggering_signal='Daily cycle complete.'), log_file)
+    append_to_log(SessionLogEntry(
+        timestamp=now.isoformat(), 
+        action_type='CYCLE_START', 
+        triggering_module='MAIN_ORCHESTRATOR', 
+        triggering_signal='Full integration sweep initiated.'
+    ))
 
+    # --- PHASE 1: DATA INGESTION (THE SENSES) ---
+    print("\n[STEP 1] Running Multi-Feed Data Ingestion...")
+    signals = data_pipeline.run_all_feeds()
+    # Extract specific values for downstream engines
+    # (Simulating extraction from SignalRecord list)
+    vix_val = 14.5
+    sp_pmi = 0.515
+    btc_funding = 0.0001
+    
+    # --- PHASE 2: MACRO & SENTIMENT (ARAS / RPE / RSS) ---
+    print("\n[STEP 2] Calculating Regime & Sentiment...")
+    # 2.1 RSS (Retail Sentiment)
+    rss_res = calculate_mc_rss(
+        retail_net_buying_usd=1.2e9, 
+        retail_history_30d=[1.1e9, 1.3e9], 
+        naaim_exposure_index=85.0, 
+        aaii_bull_bear_spread=0.20
+    )
+    
+    # 2.2 RPE (Regime Probability)
+    rpe_res = calculate_rpe(current_regime="WATCH", latest_signals=signals)
+    
+    # 2.3 Incapacitation Check (Safety)
+    last_hb = now - datetime.timedelta(minutes=45)
+    incap_res = run_incapacitation_check(last_hb, "WATCH")
+    
+    # --- PHASE 3: PORTFOLIO MAINTENANCE (CDF / DSHP) ---
+    print("\n[STEP 3] Auditing Portfolio & Performance...")
+    # 3.1 DSHP (Harvesting)
+    nav = 50_000_000.0
+    mock_sleeve = {
+        'SGOL': DefensivePosition('SGOL', nav * 0.025, nav * 0.02, 0.025) # 25% app
+    }
+    harvest_actions = run_dshp_check(mock_sleeve, nav)
+    
+    # 3.2 CDF (Decay)
+    cdf_status = [calculate_position_decay("TSLA", 10, 2.0)] # Normal
+    
+    # --- PHASE 4: HEDGE MANAGEMENT (CAM / PTRH) ---
+    print("\n[STEP 4] Calculating Tail-Risk Coverage...")
+    cam_in = CamInputs(
+        current_equity_pct=0.58, regime_score=0.35, 
+        fem_concentration_score=0.45, macro_stress_score=0.25, 
+        cdm_active_signals=0, nav=nav
+    )
+    mock_puts = [OptionsPosition("QQQ", "PUT", 480, "2026-05-15", 100, 600_000)]
+    ptrh_res = run_ptrh_module(cam_in, mock_puts)
+    
+    # --- PHASE 5: THESIS INTEGRITY (CDM / TDC) ---
+    print("\n[STEP 5] Running AI-Driven Thesis Audits...")
+    mock_news = [NewsItem(
+        'SEC_EDGAR', 'Alphabet CEO Files Form 4', 'Insider selling detected...', 
+        now.isoformat(), ['Alphabet'], 'INSIDER_SALE'
+    )]
+    cdm_alerts = run_cdm_scan(mock_news)
+    tdc_results = []
+    for alert in cdm_alerts:
+        tdc_results.append(run_thesis_review(alert))
+        
+    # --- PHASE 6: GROWTH & RE-ENTRY (ARES / AUP) ---
+    print("\n[STEP 6] Evaluating Growth & Re-Entry...")
+    ares_res = run_ares_check("WATCH", 0.35, 0.25, rss_res.composite_rss)
+    aup_res = run_aup_check("WATCH", 7.8, True, 0.15, 0.05)
+    
+    # --- PHASE 7: CONSOLIDATION & REPORTING ---
+    print("\n[STEP 7] Generating Daily Monitor v2.1...")
+    # Mock some data for the monitor aggregator
+    mics_results = {"NVDA": calculate_mics(SentinelGateInputs(24, 'Cat B', 'NORMAL', 'WATCH'))}
+    
+    # Actually add harvest actions to confirmation queue for simulation
+    for ha in harvest_actions:
+        confirmation_queue.add_action(ha)
+        
+    monitor = generate_daily_monitor(
+        current_regime="WATCH", regime_score=0.35, rpe_signal=rpe_res,
+        ptrh_status=ptrh_res, mics_results=mics_results,
+        tdc_results=tdc_results, cdm_alerts=[a.__dict__ for a in cdm_alerts],
+        dshp_actions=[ha.item.__dict__ for ha in harvest_actions], # Simplified for mock
+        ares_status=ares_res, cdf_statuses=cdf_status,
+        rss_result=rss_res, safety_status=incap_res, nav=nav
+    )
+    
+    print("\n" + "="*60)
+    print("SWEEP COMPLETE: MONITOR PAYLOAD READY")
+    print(f"Decision Queue Size: {len(monitor.decision_queue)}")
+    print(f"Current Regime: {monitor.regime} (Score: {monitor.regime_score})")
+    print(f"Anticipatory Signal: {monitor.rpe.highest_prob_transition} ({monitor.rpe.highest_prob_value:.1%})")
+    print("="*60)
+    
+    append_to_log(SessionLogEntry(
+        timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(), 
+        action_type='CYCLE_END', 
+        triggering_module='MAIN_ORCHESTRATOR', 
+        triggering_signal='Daily sweep complete.'
+    ))
+    
+    broker.disconnect()
+
+if __name__ == '__main__':
+    run_full_arms_cycle()

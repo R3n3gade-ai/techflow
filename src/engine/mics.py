@@ -2,8 +2,10 @@
 # Implements the Model-Implied Conviction Score (MICS) formula.
 # This is the data-driven brain for position sizing.
 
+import json
+import os
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, Dict
 
 # --- Data Structures for Inputs ---
 
@@ -26,27 +28,60 @@ class MICSResult:
     raw_score: float        # The precise MICS score, float from 0.0-10.0.
     conviction_level: int   # The final C-level, integer from 1-10.
 
+# --- Helper Functions ---
+
+def _load_calibration_weights() -> Dict[str, float]:
+    """
+    Loads adjusted weights from the CCM module.
+    Returns baseline weights if no calibration exists.
+    """
+    baseline = {
+        "gate3_weight": 0.40,
+        "gate6_weight": 0.30,
+        "gate4_weight": 0.15,
+        "gate5_weight": 0.15,
+        "pm_alpha": 1.00
+    }
+    
+    path = "achelion_arms/src/config/calibration_state.json"
+    if os.path.exists(path):
+        try:
+            with open(path, 'r') as f:
+                cal = json.load(f)
+                # Apply adjustments to baseline
+                baseline["gate3_weight"] += cal.get("gate3_weight_adj", 0)
+                baseline["gate6_weight"] += cal.get("gate6_weight_adj", 0)
+                baseline["gate4_weight"] += cal.get("gate4_weight_adj", 0)
+                baseline["gate5_weight"] += cal.get("gate5_weight_adj", 0)
+                baseline["pm_alpha"] = cal.get("pm_performance_alpha", 1.0)
+        except Exception:
+            pass # Fallback to baseline
+            
+    return baseline
+
 # --- Core Calculation Function ---
 
 def calculate_mics(inputs: SentinelGateInputs) -> MICSResult:
     """
     Calculates the Model-Implied Conviction Score based on SENTINEL gate data.
     
-    This function is the implementation of the formula from ARMS FSD v1.1, Section 11.1.
+    This function is the implementation of the formula from ARMS FSD v1.1, Section 11.1,
+    augmented with the Phase 2 Conviction Calibration Module (CCM) loop.
     """
 
-    # Component weights — sum to 1.0
-    gate3_weight = 0.40  # Quantitative mispricing — core signal
-    gate6_weight = 0.30  # Source quality — information edge
-    gate4_weight = 0.15  # FEM impact — portfolio cleanliness
-    gate5_weight = 0.15  # Regime timing — entry quality
+    # 0. Load (possibly calibrated) weights
+    weights = _load_calibration_weights()
 
     # 1. Normalize Gate 3 score (0-30 -> 0-10)
     g3_score = (inputs.gate3_raw_score / 30) * 10
 
     # 2. Map Gate 6 source category to score
     source_scores = {'Cat A': 10, 'Cat B': 8, 'Cat C': 5, 'None': 4}
-    g6_score = source_scores.get(inputs.source_category, 0) # Default to 0 if invalid category
+    g6_score = source_scores.get(inputs.source_category, 0)
+    
+    # Apply PM Alpha adjustment from CCM
+    if inputs.source_category in ['Cat A', 'Cat B']:
+        g6_score *= weights["pm_alpha"]
 
     # 3. Map Gate 4 FEM impact to score
     fem_scores = {
@@ -68,10 +103,10 @@ def calculate_mics(inputs: SentinelGateInputs) -> MICSResult:
 
     # 5. Calculate weighted average for raw score
     mics_raw = (
-        (g3_score * gate3_weight) +
-        (g6_score * gate6_weight) +
-        (g4_score * gate4_weight) +
-        (g5_score * gate5_weight)
+        (g3_score * weights["gate3_weight"]) +
+        (g6_score * weights["gate6_weight"]) +
+        (g4_score * weights["gate4_weight"]) +
+        (g5_score * weights["gate5_weight"])
     )
 
     # 6. Round to nearest integer for the final C-level (1-10)

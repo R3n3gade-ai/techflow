@@ -28,7 +28,7 @@
 ## Phase 2: Resilience & Expansion (ACTIVE DEVELOPMENT)
 - [x] **ARES** (Re-Entry System): `src/engine/ares.py` Tier 0 logic complete.
 - [x] **CDF** (Conviction Decay Function): `src/engine/cdf.py` Day 45/90/135 logic complete.
-- [ ] **CCM** (Conviction Calibration Module)
+- [x] **CCM** (Conviction Calibration Module): `src/engine/conviction_calibration.py` learning loop complete.
 - [ ] **TRP** (Thesis Retirement Protocol)
 - [ ] **MC-RSS** (Retail Sentiment Score)
 - [ ] **Incapacitation Protocol**

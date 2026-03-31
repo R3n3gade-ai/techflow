@@ -1,0 +1,108 @@
+"""
+ARMS Engine: Conviction Decay Function (CDF)
+
+This module prevents "thesis drift" by automatically decaying the weights
+of positions that underperform the QQQ for extended periods.
+
+"Silence is trust in the architecture."
+
+Reference: ARMS v4.0 Briefing, Section 2.3
+Reference: FSD v1.1, Section 2 (Tier 0)
+"""
+
+import datetime
+from dataclasses import dataclass, field
+from typing import List, Dict, Literal, Optional
+
+# --- Internal Imports ---
+from reporting.audit_log import SessionLogEntry, append_to_log
+from execution.interfaces import OrderRequest
+
+# --- Data Structures ---
+
+@dataclass
+class CDFStatus:
+    """Represents the decay state of a specific position."""
+    ticker: str
+    days_underperforming: int
+    underperformance_pp: float # Percentage points vs QQQ
+    current_multiplier: float
+    next_decay_at: Optional[int]
+    is_orderly_exit_due: bool
+    timestamp: str = field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
+
+# --- Configuration ---
+
+# Threshold for underperformance (Percentage Points)
+UNDERPERFORMANCE_THRESHOLD = 10.0 
+
+# Decay Milestones
+DECAY_MILESTONES = {
+    45: 0.80, # 20% reduction
+    90: 0.60  # 40% total reduction
+}
+
+# Final Milestone
+EXIT_MILESTONE = 135
+
+# --- CDF Logic ---
+
+def calculate_position_decay(
+    ticker: str,
+    days_underperforming: int,
+    underperformance_pp: float
+) -> CDFStatus:
+    """
+    Calculates the current weight multiplier and exit status for a position.
+    """
+    current_multiplier = 1.0
+    next_decay = None
+    is_exit_due = False
+    
+    # Check if threshold is met
+    if underperformance_pp >= UNDERPERFORMANCE_THRESHOLD:
+        # Determine multiplier based on milestones
+        if days_underperforming >= EXIT_MILESTONE:
+            current_multiplier = 0.60
+            is_exit_due = True
+        elif days_underperforming >= 90:
+            current_multiplier = 0.60
+            next_decay = EXIT_MILESTONE
+        elif days_underperforming >= 45:
+            current_multiplier = 0.80
+            next_decay = 90
+        else:
+            next_decay = 45
+            
+    status = CDFStatus(
+        ticker=ticker,
+        days_underperforming=days_underperforming,
+        underperformance_pp=underperformance_pp,
+        current_multiplier=current_multiplier,
+        next_decay_at=next_decay,
+        is_orderly_exit_due=is_exit_due
+    )
+    
+    # Audit Logging for Decay Events
+    if days_underperforming in [45, 90, EXIT_MILESTONE] and underperformance_pp >= UNDERPERFORMANCE_THRESHOLD:
+        append_to_log(SessionLogEntry(
+            timestamp=status.timestamp,
+            action_type='CDF_DECAY',
+            triggering_module='CDF',
+            triggering_signal=f"Day {days_underperforming} Milestone: multiplier set to {current_multiplier:.2x}",
+            ticker=ticker
+        ))
+        print(f"[CDF] Decay Applied: {ticker} (Day {days_underperforming}) -> {current_multiplier:.2x}")
+
+    return status
+
+if __name__ == '__main__':
+    print("ARMS CDF Module Active (Simulation Mode)")
+    
+    # Test Day 45 Decay
+    res_45 = calculate_position_decay("NVDA", 45, 12.5)
+    print(f"Status (Day 45): {res_45}")
+    
+    # Test Day 135 Exit
+    res_135 = calculate_position_decay("TSLA", 135, 15.0)
+    print(f"Status (Day 135): {res_135}")

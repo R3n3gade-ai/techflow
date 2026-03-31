@@ -25,14 +25,14 @@
 - [x] **Infrastructure:** AWS "The Fortress" deployment (Terraform foundation in `infra/`).
 - [x] **Live Monitor v2.0:** `src/reporting/daily_monitor.py` fully automated.
 
-## Phase 2 & 3: Resilience & Expansion (PLANNED)
-- [ ] **ARES** (Re-Entry System)
+## Phase 2: Resilience & Expansion (ACTIVE DEVELOPMENT)
+- [x] **ARES** (Re-Entry System): `src/engine/ares.py` Tier 0 logic complete.
+- [x] **CDF** (Conviction Decay Function): `src/engine/cdf.py` Day 45/90/135 logic complete.
 - [ ] **CCM** (Conviction Calibration Module)
-- [ ] **CDF** (Conviction Decay Function) - Day 45/90/135 logic.
 - [ ] **TRP** (Thesis Retirement Protocol)
 - [ ] **MC-RSS** (Retail Sentiment Score)
 - [ ] **Incapacitation Protocol**
-- [ ] **Live Monitor v2.0:** (Connecting mock-up UIs to live backend data).
+- [ ] **Live Monitor v2.0 Update:** (Integrating ARES/CDF into dashboard).
 
 ---
 

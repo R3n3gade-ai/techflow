@@ -30,7 +30,7 @@
 - [x] **CDF** (Conviction Decay Function): `src/engine/cdf.py` Day 45/90/135 logic complete.
 - [x] **CCM** (Conviction Calibration Module): `src/engine/conviction_calibration.py` learning loop complete.
 - [x] **TRP** (Thesis Retirement Protocol): `src/engine/thesis_retirement.py` Tier 1 logic complete.
-- [ ] **MC-RSS** (Retail Sentiment Score)
+- [x] **MC-RSS** (Retail Sentiment Score): `src/engine/mc_rss.py` contrarian logic complete.
 - [ ] **Incapacitation Protocol**
 - [ ] **Live Monitor v2.0 Update:** (Integrating ARES/CDF into dashboard).
 

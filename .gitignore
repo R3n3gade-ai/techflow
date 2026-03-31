@@ -1,0 +1,11 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+.env
+*.jsonl
+achelion_arms/logs/
+*.png
+achelion_arms/monitor_examples/
+achelion_arms/achelion_arms/logs/

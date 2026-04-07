@@ -19,7 +19,7 @@ from typing import List, Dict, Literal, Optional
 from engine.tdc import ThesisReviewResult
 from engine.cdf import CDFStatus
 from reporting.audit_log import SessionLogEntry, append_to_log
-from execution.interfaces import OrderRequest
+from execution.order_request import OrderRequest
 from execution.confirmation_queue import QueuedAction
 
 # --- Data Structures ---
@@ -89,11 +89,16 @@ def run_trp_check(
         order = OrderRequest(
             ticker=ticker,
             action='SELL',
-            quantity=0.0, # 0.0 implies FULL EXIT in this execution style
+            quantity=0.0, # Transitional semantics: 0.0 implies full-exit instruction
             order_type='VWAP',
+            execution_window_min=60,
+            slippage_budget_bps=20.0,
+            priority=2,
             triggering_module='TRP',
             triggering_signal=f"Thesis Retirement Protocol: {reason}.",
-            tier=1 # TRP is Tier 1 (Veto Window) before CCM matures
+            tier=1,
+            confirmation_required=True,
+            veto_window_hours=24.0
         )
         
         # 2. Log to Audit Trail
@@ -105,7 +110,17 @@ def run_trp_check(
             ticker=ticker
         ))
         
+        queued_action = QueuedAction(
+            action_id=f"trp_{ticker}_{datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d_%H%M')}",
+            item=order,
+            triggering_module='TRP',
+            rationale=order.triggering_signal,
+            queued_at=datetime.datetime.now(datetime.timezone.utc),
+            veto_window_hours=24.0
+        )
+
         print(f"[TRP] RETIREMENT TRIGGERED: {ticker} ({reason})")
+        print(f"[TRP] QUEUED ACTION: {queued_action.action_id}")
         
     return status
 

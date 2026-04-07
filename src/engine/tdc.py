@@ -18,7 +18,7 @@ from typing import List, Literal, Optional
 
 # --- Internal Imports ---
 from engine.cdm import CdmAlert
-from intelligence.claude_wrapper import claude_wrapper
+from intelligence.llm_wrapper import llm_wrapper
 from execution.confirmation_queue import ConfirmationQueue, QueuedAction
 from reporting.audit_log import SessionLogEntry, append_to_log
 
@@ -92,9 +92,9 @@ def run_thesis_review(alert: CdmAlert) -> ThesisReviewResult:
     }}
     """
 
-    # 3. Call the Claude API
-    # Note: claude_wrapper is a singleton instance
-    response_json = claude_wrapper.call(
+    # 3. Call the Universal LLM Wrapper
+    # Note: llm_wrapper is a singleton instance that can be configured for Anthropic, Google, or OpenAI
+    response_json = llm_wrapper.call(
         task_type='thesis_review',
         prompt=prompt,
         knowledge_base_query=f'{position} thesis SENTINEL gates'

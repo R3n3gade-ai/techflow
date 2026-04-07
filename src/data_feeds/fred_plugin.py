@@ -1,17 +1,23 @@
 # src/data_feeds/fred_plugin.py
 # A concrete implementation of a FeedPlugin for the FRED data source.
 
-from datetime import datetime
-from typing import List
+import os
+from datetime import datetime, timezone
+from typing import List, Dict
+from urllib.parse import urlencode
+from urllib.request import urlopen
+import json
 
 from .interfaces import FeedPlugin, SignalRecord
 
 # A list of specific economic series we want to track from FRED.
-# This would be expanded and likely moved to a configuration file.
-FRED_SERIES_IDS = {
+# This can be expanded or moved to configuration later.
+FRED_SERIES_IDS: Dict[str, str] = {
     "FED_FUNDS_RATE": "FEDFUNDS",
     "10Y_TREASURY_YIELD": "DGS10",
     "VIX_INDEX": "VIXCLS",
+    "HY_CREDIT_SPREAD": "BAMLH0A0HYM2",
+    "PMI_NOWCAST": "ISM/MAN_PMI"  # ISM Manufacturing PMI (used as proxy if S&P Global not available)
 }
 
 class FredPlugin(FeedPlugin):
@@ -19,47 +25,83 @@ class FredPlugin(FeedPlugin):
     A FeedPlugin to fetch key economic indicators from the
     Federal Reserve Economic Data (FRED) API.
     """
-    
+
+    BASE_URL = "https://api.stlouisfed.org/fred/series/observations"
+
     @property
     def name(self) -> str:
         return "FRED"
 
+    def _get_api_key(self) -> str:
+        api_key = os.environ.get("FRED_API_KEY")
+        if not api_key:
+            raise RuntimeError("FRED_API_KEY is not set in the environment.")
+        return api_key
+
+    def _fetch_latest_observation(self, series_id: str) -> dict:
+        params = {
+            "series_id": series_id,
+            "api_key": self._get_api_key(),
+            "file_type": "json",
+            "sort_order": "desc",
+            "limit": 10,
+        }
+        url = f"{self.BASE_URL}?{urlencode(params)}"
+
+        with urlopen(url, timeout=15) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+
+        observations = payload.get("observations", [])
+        for obs in observations:
+            value = obs.get("value")
+            if value not in (None, "."):
+                return obs
+
+        raise RuntimeError(f"No usable observation returned for FRED series {series_id}.")
+
+    def _normalize_value(self, signal_type: str, value: float) -> float:
+        if signal_type in {"FED_FUNDS_RATE", "10Y_TREASURY_YIELD", "HY_CREDIT_SPREAD"}:
+            return value / 100.0
+        if signal_type == "VIX_INDEX":
+            return value / 100.0
+        if signal_type == "PMI_NOWCAST":
+            return value / 100.0
+        return value
+
     def fetch(self) -> List[SignalRecord]:
         """
-        Fetches the latest data for the configured series from the FRED API.
-        
-        NOTE: This is a SIMULATED response for testing purposes, as we are
-        not making live API calls from this environment.
+        Fetch the latest available data for configured FRED series.
         """
-        
-        print(f"[{self.name} Plugin] Generating SIMULATED data from FRED...")
-        
-        records = []
-        now = datetime.utcnow().isoformat()
-        
-        # --- Simulated Logic ---
-        # This block simulates what would be returned from live API calls.
-        simulated_data = {
-            "FED_FUNDS_RATE": "5.33",
-            "10Y_TREASURY_YIELD": "4.25",
-            "VIX_INDEX": "13.5",
-        }
+        print(f"[{self.name} Plugin] Fetching live data from FRED...")
 
-        for signal_type, raw_value in simulated_data.items():
-            value = float(raw_value)
-            # Placeholder for normalization logic
-            normalized_value = value / 100 if "RATE" in signal_type else value / 100 # Simple example
+        records: List[SignalRecord] = []
+        fetched_at = datetime.now(timezone.utc).isoformat()
 
-            records.append(SignalRecord(
-                ticker="MACRO",
-                signal_type=signal_type,
-                value=normalized_value,
-                raw_value=raw_value,
-                source=self.name,
-                timestamp=now,
-                cost_tier='FREE'
-            ))
-        
-        print(f"[{self.name} Plugin] Simulated fetch complete. Returning {len(records)} records.")
+        try:
+            api_key = self._get_api_key()
+        except RuntimeError as e:
+            print(f"[{self.name} Plugin] FAILED with error: {e}")
+            raise e
+
+        for signal_type, series_id in FRED_SERIES_IDS.items():
+            try:
+                obs = self._fetch_latest_observation(series_id)
+                raw_value = float(obs["value"])
+                normalized_value = self._normalize_value(signal_type, raw_value)
+                observation_date = obs.get("date", fetched_at)
+
+                records.append(SignalRecord(
+                    ticker="MACRO",
+                    signal_type=signal_type,
+                    value=normalized_value,
+                    raw_value=raw_value,
+                    source=self.name,
+                    timestamp=observation_date,
+                    cost_tier='FREE'
+                ))
+            except Exception as e:
+                print(f"[{self.name} Plugin] Failed to fetch {series_id}: {e}")
+
+        print(f"[{self.name} Plugin] Live fetch complete. Returning {len(records)} records.")
         return records
 

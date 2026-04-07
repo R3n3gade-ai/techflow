@@ -17,7 +17,7 @@ from typing import List, Dict, Literal, Optional
 
 # --- Internal Imports ---
 from data_feeds.interfaces import SignalRecord
-from execution.interfaces import OrderRequest
+from execution.order_request import OrderRequest
 from reporting.audit_log import SessionLogEntry, append_to_log
 
 # --- Data Structures ---

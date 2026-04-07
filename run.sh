@@ -4,6 +4,14 @@
 # Get the absolute path to the directory containing this script (the project root).
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 SRC_DIR="$SCRIPT_DIR/src"
+ENV_FILE="$SCRIPT_DIR/.env"
+
+if [ -f "$ENV_FILE" ]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+  set +a
+fi
 
 echo "Starting Achelion ARMS Main Cycle from within src..."
 

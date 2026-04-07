@@ -21,7 +21,7 @@ from config.dshp_config import (
     DBMF_TARGET_WEIGHT, DBMF_HARVEST_THRESHOLD, DBMF_DRIFT_THRESHOLD,
     DSHP_VETO_WINDOW_HOURS
 )
-from execution.interfaces import OrderRequest
+from execution.order_request import OrderRequest
 from execution.confirmation_queue import QueuedAction
 from reporting.audit_log import SessionLogEntry, append_to_log
 
@@ -67,11 +67,16 @@ def run_dshp_check(sleeve_positions: Dict[str, DefensivePosition],
                 order = OrderRequest(
                     ticker='SGOL',
                     action='SELL',
-                    quantity=trim_amount, # Using dollar amount for placeholder/sim
+                    quantity=trim_amount, # Transitional semantics: USD notional placeholder
                     order_type='MARKET',
+                    execution_window_min=30,
+                    slippage_budget_bps=8.0,
+                    priority=3,
                     triggering_module='DSHP',
                     triggering_signal=f"Appreciation Harvest: {appreciation:.2%} (Target 2.0%)",
-                    tier=1
+                    tier=1,
+                    confirmation_required=True,
+                    veto_window_hours=DSHP_VETO_WINDOW_HOURS
                 )
                 
                 # Wrap in QueuedAction for Tier 1 Veto Window
@@ -118,11 +123,16 @@ def run_dshp_check(sleeve_positions: Dict[str, DefensivePosition],
                 order = OrderRequest(
                     ticker='DBMF',
                     action='SELL',
-                    quantity=trim_amount,
+                    quantity=trim_amount, # Transitional semantics: USD notional placeholder
                     order_type='MARKET',
+                    execution_window_min=30,
+                    slippage_budget_bps=8.0,
+                    priority=3,
                     triggering_module='DSHP',
                     triggering_signal=signal,
-                    tier=1
+                    tier=1,
+                    confirmation_required=True,
+                    veto_window_hours=DSHP_VETO_WINDOW_HOURS
                 )
                 
                 action = QueuedAction(

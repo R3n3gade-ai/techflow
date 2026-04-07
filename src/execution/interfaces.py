@@ -1,27 +1,11 @@
 # src/execution/interfaces.py
-# Defines the standard interfaces for all execution and brokerage modules.
+# Defines the standard broker and position interfaces for the execution layer.
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Literal, List
 
-@dataclass
-class OrderRequest:
-    """
-    The standardized data structure for an order request.
-    This is the "nerve signal" sent from ARMS modules to the execution layer.
-    
-    Based on FSD v1.1, Section 8.3.
-    """
-    ticker: str
-    action: Literal['BUY', 'SELL', 'BUY_PUT', 'SELL_CALL']
-    quantity: float  # Use float to handle notional orders for things like puts
-    order_type: Literal['MARKET', 'VWAP', 'LIMIT']
-    
-    # Context from the system
-    triggering_module: str
-    triggering_signal: str
-    tier: int
+from .order_request import OrderRequest
 
 @dataclass
 class Position:
@@ -29,9 +13,11 @@ class Position:
     A standardized representation of a portfolio position.
     """
     ticker: str
+    sec_type: str
     quantity: float
     average_cost: float
     market_value: float
+    con_id: int
 
 class Broker(ABC):
     """
@@ -63,6 +49,13 @@ class Broker(ABC):
     def get_positions(self) -> List[Position]:
         """
         Retrieves the current portfolio positions from the broker.
+        """
+        pass
+
+    @abstractmethod
+    def get_nav(self) -> float:
+        """
+        Retrieves the current Net Asset Value of the account.
         """
         pass
 

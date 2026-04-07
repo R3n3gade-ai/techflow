@@ -20,6 +20,7 @@ class SessionLogEntry:
     triggering_signal: str  # Human-readable rationale for the action
     
     # Optional fields for context
+    correlation_id: Optional[str] = None
     ticker: Optional[str] = None
     mics_score: Optional[float] = None
     regime_at_action: Optional[str] = None

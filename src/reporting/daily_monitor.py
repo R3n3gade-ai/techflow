@@ -80,10 +80,11 @@ def generate_daily_monitor(
     
     # Add DSHP harvests to the queue
     for action in dshp_actions:
+        item = action.get('item', {})
         decision_queue.append({
             "id": action.get('action_id', 'unknown'),
             "module": "DSHP",
-            "item": f"Trim {action.get('instrument', 'N/A')} to target weight.",
+            "item": f"Trim {item.get('ticker', 'N/A')} to target weight.",
             "rationale": action.get('rationale', 'Gain harvesting.'),
             "status": "PENDING_VETO",
             "tier": 1

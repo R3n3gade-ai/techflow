@@ -1,25 +1,24 @@
 # src/execution/confirmation_queue.py
-# Implements the Tier 1 Confirmation Queue with the information-quality interface.
+# Implements the Tier 1 & 2 Confirmation Queue with a durable JSON persistence backend.
 
-from dataclasses import dataclass, field
-from typing import List, Literal, Optional
-from datetime import datetime, timedelta
+import json
+import os
+import uuid
+from dataclasses import dataclass, asdict
+from typing import List, Literal, Optional, Dict
+from datetime import datetime, timedelta, timezone
 
-# We need the OrderRequest to represent what is being approved
-# This will be in its own file, but we can define a placeholder for now.
-# from .interfaces import OrderRequest 
-@dataclass
-class PlaceholderOrderRequest:
-    ticker: str
-    action: str
+from .order_request import OrderRequest
+from reporting.audit_log import append_to_log, SessionLogEntry
+
 
 @dataclass
 class QueuedAction:
     """
-    Represents a single Tier 1 action waiting for PM confirmation.
+    Represents a single Tier 1 or Tier 2 action waiting for PM confirmation.
     """
     action_id: str
-    item: PlaceholderOrderRequest  # The actual order or action being requested
+    item: OrderRequest  # Canonical execution request
     triggering_module: str
     rationale: str
     queued_at: datetime
@@ -27,29 +26,82 @@ class QueuedAction:
     
     status: Literal['PENDING', 'EXECUTED', 'HELD', 'VETOED', 'TIMED_OUT'] = 'PENDING'
     pm_rationale: Optional[str] = None
+    responded_at: Optional[datetime] = None
+
+    def to_dict(self) -> dict:
+        d = asdict(self)
+        d['queued_at'] = self.queued_at.isoformat()
+        if self.responded_at:
+            d['responded_at'] = self.responded_at.isoformat()
+        return d
+
+    @classmethod
+    def from_dict(cls, data: dict) -> 'QueuedAction':
+        d = dict(data)
+        d['queued_at'] = datetime.fromisoformat(d['queued_at'])
+        if d.get('responded_at'):
+            d['responded_at'] = datetime.fromisoformat(d['responded_at'])
+        
+        # Deserialize OrderRequest
+        order_dict = d.pop('item')
+        d['item'] = OrderRequest(**order_dict)
+        return cls(**d)
+
 
 class ConfirmationQueue:
     """
-    Manages the queue of Tier 1 actions that require PM review.
+    Manages the queue of Tier 1 & Tier 2 actions with durable JSON persistence.
     """
     
-    def __init__(self):
-        self._queue: List[QueuedAction] = []
+    def __init__(self, storage_path: str = "achelion_arms/state/confirmation_queue.json"):
+        self.storage_path = storage_path
+        self._queue: Dict[str, QueuedAction] = {}
+        self._load_state()
+
+    def _load_state(self):
+        if not os.path.exists(self.storage_path):
+            return
+        try:
+            with open(self.storage_path, 'r') as f:
+                data = json.load(f)
+                for item_dict in data.get("queue", []):
+                    action = QueuedAction.from_dict(item_dict)
+                    self._queue[action.action_id] = action
+        except (json.JSONDecodeError, FileNotFoundError) as e:
+            print(f"[ConfirmationQueue] Error loading state: {e}. Starting fresh.")
+
+    def _save_state(self):
+        os.makedirs(os.path.dirname(self.storage_path), exist_ok=True)
+        with open(self.storage_path, 'w') as f:
+            json.dump({
+                "last_updated": datetime.now(timezone.utc).isoformat(),
+                "queue": [a.to_dict() for a in self._queue.values()]
+            }, f, indent=4)
 
     def add_action(self, action: QueuedAction):
-        """Adds a new Tier 1 action to the queue."""
-        print(f"[ConfirmationQueue] New Tier 1 Action added: {action.action_id}")
-        self._queue.append(action)
+        """Adds a new Tier 1 or Tier 2 action to the persistent queue."""
+        self._queue[action.action_id] = action
+        self._save_state()
+        print(f"[ConfirmationQueue] New Action queued durably: {action.action_id} [CorID: {action.item.correlation_id}]")
+        
+        append_to_log(SessionLogEntry(
+            timestamp=datetime.now(timezone.utc).isoformat(),
+            action_type='QUEUE_PENDING',
+            triggering_module='CONFIRMATION_QUEUE',
+            triggering_signal=f"Action {action.action_id} queued. Rationale: {action.rationale}",
+            correlation_id=action.item.correlation_id,
+            ticker=action.item.ticker
+        ))
 
     def get_open_items(self) -> List[QueuedAction]:
         """Returns all actions currently in a 'PENDING' state."""
-        return [action for action in self._queue if action.status == 'PENDING']
+        return [a for a in self._queue.values() if a.status == 'PENDING']
 
     def submit_response(self, action_id: str, response: Literal['EXECUTE', 'HOLD', 'VETO'], rationale: Optional[str] = None):
         """
-        Submits a PM's response to a queued action.
+        Submits a PM's response to a queued action (Tier 1/2 Information-Quality Interface).
         """
-        action = next((a for a in self._queue if a.action_id == action_id), None)
+        action = self._queue.get(action_id)
         if not action or action.status != 'PENDING':
             print(f"[ConfirmationQueue] Action {action_id} not found or already actioned.")
             return
@@ -60,21 +112,56 @@ class ConfirmationQueue:
 
         action.status = f"{response}ED" # e.g., EXECUTED, VETOED
         action.pm_rationale = rationale
-        print(f"[ConfirmationQueue] PM responded to {action_id} with: {response}")
+        action.responded_at = datetime.now(timezone.utc)
+        
+        self._save_state()
+        print(f"[ConfirmationQueue] PM responded to {action_id} with: {response} [CorID: {action.item.correlation_id}]")
+        
+        append_to_log(SessionLogEntry(
+            timestamp=action.responded_at.isoformat(),
+            action_type=f'QUEUE_{response}ED',
+            triggering_module='CONFIRMATION_QUEUE',
+            triggering_signal=f"PM responded {response}. Rationale: {rationale or 'None'}",
+            correlation_id=action.item.correlation_id,
+            ticker=action.item.ticker,
+            pm_override=(response == 'VETO'),
+            override_rationale=rationale if response == 'VETO' else None
+        ))
 
     def check_for_timeouts(self):
         """
         Checks for actions where the veto window has expired and marks them
         for automatic execution.
-        
-        This would be called periodically by the scheduler.
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
+        state_changed = False
+        
         for action in self.get_open_items():
-            expiry_time = action.queued_at + timedelta(hours=action.veto_window_hours)
+            # Ensure queued_at is timezone-aware for comparison
+            queued_at = action.queued_at
+            if queued_at.tzinfo is None:
+                queued_at = queued_at.replace(tzinfo=timezone.utc)
+
+            expiry_time = queued_at + timedelta(hours=action.veto_window_hours)
+            
             if now >= expiry_time:
                 action.status = 'TIMED_OUT'
-                print(f"[ConfirmationQueue] Action {action.action_id} timed out. Proceeding with default execution.")
+                action.responded_at = now
+                action.pm_rationale = "Time window expired; system defaulting to execution."
+                state_changed = True
+                
+                print(f"[ConfirmationQueue] Action {action.action_id} timed out. Proceeding to EXECUTED. [CorID: {action.item.correlation_id}]")
+                
+                append_to_log(SessionLogEntry(
+                    timestamp=now.isoformat(),
+                    action_type='QUEUE_TIMED_OUT',
+                    triggering_module='CONFIRMATION_QUEUE',
+                    triggering_signal=f"Action {action.action_id} timed out. Proceeding to execution.",
+                    correlation_id=action.item.correlation_id,
+                    ticker=action.item.ticker
+                ))
 
-# The main application would then have logic to process actions based on their status,
-# e.g., sending items with status 'EXECUTED' or 'TIMED_OUT' to the broker_api.
+        if state_changed:
+            self._save_state()
+
+# The execution layer can now poll get_open_items() or process actions marked 'EXECUTED' / 'TIMED_OUT'.

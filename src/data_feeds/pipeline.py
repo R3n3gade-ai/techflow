@@ -5,7 +5,6 @@ from typing import List
 
 from .interfaces import FeedPlugin, SignalRecord
 from .fred_plugin import FredPlugin
-from .pmi_plugin import PmiPlugin
 from .crypto_plugin import CryptoPlugin
 
 class DataPipeline:
@@ -20,7 +19,6 @@ class DataPipeline:
         # Explicitly list the plugins to load for Phase 1.
         self.plugins: List[FeedPlugin] = [
             FredPlugin(),
-            PmiPlugin(),
             CryptoPlugin()
         ]
         print(f"[DataPipeline] Initialized with {len(self.plugins)} specified plugin(s).")

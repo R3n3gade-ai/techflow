@@ -10,8 +10,9 @@ No module should ever generate a trade order in any other format.
 Reference: arms_fsd_master_build_v1.1.md, Section 8.3
 """
 
-from dataclasses import dataclass
-from typing import Literal
+import uuid
+from dataclasses import dataclass, field
+from typing import Literal, Optional
 
 @dataclass(frozen=True)
 class OrderRequest:
@@ -24,20 +25,26 @@ class OrderRequest:
     request cannot be changed after it has been created.
     """
     ticker: str
-    action: Literal['BUY', 'SELL', 'BUY_PUT', 'SELL_CALL']
-    quantity: int
-    
+    action: Literal['BUY', 'SELL', 'BUY_PUT', 'SELL_PUT', 'SELL_CALL']
+    quantity: float
+
     # Order execution parameters, determined by LAEP module
     order_type: Literal['MARKET', 'VWAP', 'LIMIT']
-    execution_window_min: int  # e.g., 30, 60, 90
-    slippage_budget_bps: float # e.g., 8, 20, 40
     
+    # Optional parameters with defaults (must be at the end)
+    execution_window_min: int = 30  # e.g., 30, 60, 90
+    slippage_budget_bps: float = 8.0 # e.g., 8, 20, 40
+    limit_price: Optional[float] = None
+
     # Audit and priority information
-    priority: int  # 1-4, for kill chain or priority ordering
-    triggering_module: str  # e.g., 'ARAS', 'PDS', 'DSHP', 'MICS'
-    triggering_signal: str  # Human-readable rationale for the audit log
-    
+    priority: int = 4  # 1-4, for kill chain or priority ordering
+    triggering_module: str = 'UNKNOWN'
+    triggering_signal: str = ''
+
     # Tier and confirmation information
-    tier: Literal[0, 1]
-    confirmation_required: bool
+    tier: Literal[0, 1] = 0
+    confirmation_required: bool = False
     veto_window_hours: float = 0.0 # Only relevant for Tier 1
+    
+    # Unique execution identifier
+    correlation_id: str = field(default_factory=lambda: str(uuid.uuid4()))

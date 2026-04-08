@@ -50,6 +50,7 @@ from engine.regime_probability import calculate_rpe
 from engine.ares import run_ares_check
 from engine.cdf import calculate_position_decay
 from engine.cdf_analytics import compute_underperformance_pp
+from engine.cdf_state import update_cdf_state
 from engine.mc_rss import calculate_mc_rss
 from engine.rss_bridge import load_rss_inputs
 from engine.cdf_bridge import load_cdf_inputs
@@ -195,12 +196,12 @@ def run_full_arms_cycle():
             computed_underperf = 0.0
 
         if rec:
-            days_under = rec.days_underperforming
             underperf = max(rec.underperformance_pp, computed_underperf)
         else:
-            days_under = 45 if computed_underperf >= 10.0 else 0
             underperf = computed_underperf
 
+        persisted = update_cdf_state(p.ticker, underperf)
+        days_under = max(rec.days_underperforming, persisted.underperforming_days) if rec else persisted.underperforming_days
         cdf_status.append(calculate_position_decay(p.ticker, days_under, underperf))
     
     # --- PHASE 4: HEDGE MANAGEMENT (CAM / PTRH) ---

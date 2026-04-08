@@ -1,0 +1,126 @@
+flowchart TB
+    %% Styling Definitions
+    classDef primary fill:#1e293b,stroke:#3b82f6,stroke-width:2px,color:#fff
+    classDef secondary fill:#0f172a,stroke:#64748b,stroke-width:1px,color:#fff
+    classDef safety fill:#450a0a,stroke:#ef4444,stroke-width:2px,color:#fff
+    classDef database fill:#422006,stroke:#f59e0b,stroke-width:2px,color:#fff
+    classDef external fill:#064e3b,stroke:#10b981,stroke-width:2px,color:#fff
+    classDef human fill:#312e81,stroke:#8b5cf6,stroke-width:2px,color:#fff
+    classDef highlight fill:#172554,stroke:#3b82f6,stroke-width:2px,color:#fff
+
+    %% Subgraphs representing the 7 Layers of ARMS
+
+    subgraph L1 [Layer 1: External Data Ingestion "The Senses"]
+        direction LR
+        FRED[FRED API\nMacro, VIX, Yields, PMI]
+        SEC[SEC EDGAR\nForm 4 Insider Trades]
+        RSS[News & Event Bridge\nRSS, Geopolitics]
+        Crypto[Crypto Feed\nFunding/Microstructure]
+        IBKR_Data[Live IBKR Feed\nPrices, Chains, NAV]
+    end
+
+    subgraph AI [Intelligence Layer "The Analyst"]
+        LLM[Universal LLM Wrapper\nClaude 3.5 / GPT-4o]
+    end
+
+    subgraph State [AWS Fortress Data & Persistence "The Memory"]
+        direction LR
+        RDS[(RDS PostgreSQL\nCore Structural State)]
+        Redis[(ElastiCache Redis\nReal-Time Signal Cache)]
+        JSON[(Durable JSON State\nPDS HWM, CQ State)]
+    end
+
+    subgraph L2 [Layer 2: Market Assessment "The Navigator & Brain"]
+        MC[Macro Compass\nRegime Scoring Engine 0.0 - 1.0]
+        RPE[Regime Probability Engine\nTransition Likelihoods]
+        ARAS[ARAS\nOutputs Regime & Equity Ceiling]
+    end
+
+    subgraph L3 [Layer 3: Risk Engines & Governance "The Pillars"]
+        direction LR
+        SENTINEL[SENTINEL Protocol\n6-Gate Candidate Entry]
+        MICS[MICS\nModel-Implied Conviction Score]
+        TDC_CDM[TDC & CDM\nThesis & Dependency Checker]
+        FEM_KEVLAR[FEM & KEVLAR\nHard Concentration Guardrails]
+        PDS[Portfolio Drawdown Sentinel\n-12% / -18% Hard Stops]
+        PTRH[PTRH\nPermanent Tail Risk QQQ Put Hedge]
+        PERM[PERM\nProfit-Locking / Covered Calls]
+        SLOF[SLOF\nSynthetic Leverage Overlay]
+        ARES[ARES\nMulti-Tranche Re-entry]
+        CDF[Conviction Decay Function]
+    end
+
+    subgraph L4 [Layer 4: Master Engine "The Builder"]
+        ME[Master Engine\nCalculates Ideal Portfolio Weights]
+        TOG[Trade Order Generator\nConverts Deltas to OrderRequests]
+    end
+
+    subgraph L5 [Layer 5: Execution Control "The Nerves"]
+        CB[Circuit Breakers\nSPX -5% / VIX >30 Halt]
+        LAEP[LAEP: Liquidity-Adjusted Protocol\nVIX-driven Market vs VWAP Slicing]
+        CQ[Confirmation Queue\nTier 0/1/2 Autonomy Gate]
+    end
+
+    subgraph L6 [Layer 6: Execution Interface "The Muscles"]
+        BrokerAPI[IBKR Broker API Adapter\nTranslates OrderRequests]
+        Market((Interactive Brokers\nLive Market Egress))
+    end
+
+    subgraph L7 [Layer 7: Reporting & Audit "The Record"]
+        AuditLog[Immutable Session Log\nCorrelation IDs]
+        DailyMon[Daily Monitor Generator\nPDF-style HTML Output]
+        PID[Proactive Intelligence Digest\nLP Narrative Engine]
+    end
+
+    %% Human Actor
+    PM((Portfolio Manager))
+
+    %% Ingestion Flows
+    FRED & SEC & RSS & Crypto & IBKR_Data --> |Raw Signals| State
+    State --> |Cached Signals| MC
+    IBKR_Data --> |Live Market Data| L3
+
+    %% L2 Flows
+    MC --> ARAS
+    RPE --> ARAS
+    ARAS --> |"Regime: RISK_ON..CRASH\nCeiling: 100%..15%"| ME
+    ARAS --> |Regime Context| L3
+
+    %% LLM Flows
+    LLM <--> |"Gate 6 Review"| SENTINEL
+    LLM <--> |"Event Impact Audits"| TDC_CDM
+
+    %% L3 Flows
+    PM --> |"Seeds Idea + Source"| SENTINEL
+    SENTINEL --> MICS
+    MICS --> |Base Conviction| ME
+    PDS & FEM_KEVLAR --> |Overrides & Caps| ME
+    PTRH & PERM & SLOF & ARES & CDF --> |Overrides & Adjustments| ME
+    TDC_CDM --> |Alerts & Updates| MICS
+
+    %% L4 to L5 Flows
+    ME --> |Target Matrix| TOG
+    TOG --> |Order Requests| CB
+    CB --> |Passed| LAEP
+    LAEP --> |Sized/Timed Tranches| CQ
+
+    %% L5 to L6 Flows (The Autonomy Control)
+    CQ --> |Tier 0 & Tier 1 Auto-pass| BrokerAPI
+    CQ <--> |Tier 1 Veto / Tier 2 Confirm| PM
+    BrokerAPI --> Market
+
+    %% Egress to Reporting
+    Market -.-> |Fills & Confirmations| State
+    State ===> L7
+    AuditLog --> DailyMon
+    DailyMon --> |"6:00 AM Delivery"| PM
+    PID --> |Monthly Briefing| PM
+
+    %% Apply Classes
+    class L1,L2,L3,L4,L5,L6,L7,AI secondary
+    class FRED,SEC,RSS,Crypto,IBKR_Data,Market external
+    class RDS,Redis,JSON database
+    class ARAS,MC,ME,LAEP,BrokerAPI,SENTINEL primary
+    class PDS,CB,FEM_KEVLAR safety
+    class PM human
+    class CQ,LLM highlight

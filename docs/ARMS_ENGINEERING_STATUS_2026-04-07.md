@@ -332,7 +332,7 @@ CDF is no longer fake-hardcoded and no longer depends solely on supplied underpe
 The live cycle now attempts to compute 45-day relative underperformance vs QQQ using broker historical closes, with bridge-fed state acting as a supplement rather than the only source.
 
 ### Why it matters
-This is a meaningful improvement, but the final design should persist true underperformance-duration history rather than approximating duration from current snapshot data.
+This was partly addressed during the remediation sprint: ARMS now persists consecutive underperformance-day state by ticker in local system state. The remaining improvement is to validate and refine that persistence against richer historical performance logic rather than simple threshold-day accumulation alone.
 
 ---
 

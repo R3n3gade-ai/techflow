@@ -74,8 +74,7 @@ class LLMWrapper:
     def _call_anthropic(self, prompt: str) -> str:
         api_key = os.environ.get("ANTHROPIC_API_KEY")
         if not api_key:
-            print("[LLMWrapper] WARNING: ANTHROPIC_API_KEY not set. Returning mock response.")
-            return self._mock_response(prompt)
+            raise RuntimeError("ANTHROPIC_API_KEY not set; refusing mock thesis response in live cycle.")
             
         from anthropic import Anthropic
         client = Anthropic(api_key=api_key)
@@ -91,8 +90,7 @@ class LLMWrapper:
     def _call_google(self, prompt: str) -> str:
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key:
-            print("[LLMWrapper] WARNING: GEMINI_API_KEY not set. Returning mock response.")
-            return self._mock_response(prompt)
+            raise RuntimeError("GEMINI_API_KEY not set; refusing mock thesis response in live cycle.")
             
         from google import genai
         from google.genai import types
@@ -108,8 +106,7 @@ class LLMWrapper:
     def _call_openai(self, prompt: str) -> str:
         api_key = os.environ.get("OPENAI_API_KEY")
         if not api_key:
-            print("[LLMWrapper] WARNING: OPENAI_API_KEY not set. Returning mock response.")
-            return self._mock_response(prompt)
+            raise RuntimeError("OPENAI_API_KEY not set; refusing mock thesis response in live cycle.")
             
         from openai import OpenAI
         client = OpenAI(api_key=api_key)

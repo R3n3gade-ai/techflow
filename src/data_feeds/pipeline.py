@@ -1,11 +1,13 @@
 # src/data_feeds/pipeline.py
 # The main orchestrator for the data ingestion pipeline.
 
+import os
 from typing import List
 
 from .interfaces import FeedPlugin, SignalRecord
 from .fred_plugin import FredPlugin
 from .crypto_plugin import CryptoPlugin
+from .pmi_plugin import PmiPlugin
 
 class DataPipeline:
     """
@@ -16,11 +18,10 @@ class DataPipeline:
     """
     
     def __init__(self):
-        # Explicitly list the plugins to load for Phase 1.
-        self.plugins: List[FeedPlugin] = [
-            FredPlugin(),
-            CryptoPlugin()
-        ]
+        # Only load plugins that can produce sourced values in this environment.
+        self.plugins: List[FeedPlugin] = [FredPlugin(), CryptoPlugin()]
+        if os.environ.get('ARMS_PMI_URL') or os.environ.get('ARMS_PMI_CSV'):
+            self.plugins.append(PmiPlugin())
         print(f"[DataPipeline] Initialized with {len(self.plugins)} specified plugin(s).")
 
     def run_all_feeds(self) -> List[SignalRecord]:

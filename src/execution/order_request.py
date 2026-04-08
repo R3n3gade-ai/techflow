@@ -27,9 +27,16 @@ class OrderRequest:
     ticker: str
     action: Literal['BUY', 'SELL', 'BUY_PUT', 'SELL_PUT', 'SELL_CALL']
     quantity: float
+    quantity_kind: Literal['SHARES', 'CONTRACTS', 'NOTIONAL_USD'] = 'SHARES'
+
+    # Optional contract metadata for derivative execution / richer audit semantics
+    con_id: Optional[int] = None
+    strike: Optional[float] = None
+    expiry: Optional[str] = None
+    option_right: Optional[Literal['P', 'C']] = None
 
     # Order execution parameters, determined by LAEP module
-    order_type: Literal['MARKET', 'VWAP', 'LIMIT']
+    order_type: Literal['MARKET', 'VWAP', 'LIMIT'] = 'MARKET'
     
     # Optional parameters with defaults (must be at the end)
     execution_window_min: int = 30  # e.g., 30, 60, 90

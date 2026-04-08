@@ -67,7 +67,8 @@ def run_dshp_check(sleeve_positions: Dict[str, DefensivePosition],
                 order = OrderRequest(
                     ticker='SGOL',
                     action='SELL',
-                    quantity=trim_amount, # Transitional semantics: USD notional placeholder
+                    quantity=trim_amount,
+                    quantity_kind='NOTIONAL_USD',
                     order_type='MARKET',
                     execution_window_min=30,
                     slippage_budget_bps=8.0,
@@ -123,7 +124,8 @@ def run_dshp_check(sleeve_positions: Dict[str, DefensivePosition],
                 order = OrderRequest(
                     ticker='DBMF',
                     action='SELL',
-                    quantity=trim_amount, # Transitional semantics: USD notional placeholder
+                    quantity=trim_amount,
+                    quantity_kind='NOTIONAL_USD',
                     order_type='MARKET',
                     execution_window_min=30,
                     slippage_budget_bps=8.0,

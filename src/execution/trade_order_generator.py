@@ -50,8 +50,9 @@ def generate_rebalance_orders(
             order = OrderRequest(
                 ticker=ticker,
                 action=action,
-                quantity=abs(delta_usd), # Transitory semantics: dollar notional
-                order_type='MARKET',     # LAEP will convert to VWAP if VIX > 25
+                quantity=abs(delta_usd),
+                quantity_kind='NOTIONAL_USD',
+                order_type='MARKET',
                 execution_window_min=30,
                 slippage_budget_bps=8.0,
                 priority=4,              # Equities priority
@@ -71,6 +72,7 @@ def generate_rebalance_orders(
                     ticker=ticker,
                     action='SELL',
                     quantity=current_value,
+                    quantity_kind='NOTIONAL_USD',
                     order_type='MARKET',
                     execution_window_min=30,
                     slippage_budget_bps=8.0,

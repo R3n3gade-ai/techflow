@@ -8,7 +8,7 @@ def render_html_report(view: DailyMonitorReportView) -> str:
     
     equity_rows = ""
     for row in view.equity_book:
-        equity_rows += f"<tr><td><strong>{row.ticker}</strong></td><td>{row.name}</td><td>{row.weight}</td><td>{row.session}</td><td><span class='status {row.status.lower()}'>{row.status}</span></td><td>{row.flag}</td></tr>"
+        equity_rows += f"<tr><td><strong>{row.ticker}</strong></td><td>{row.name}</td><td>{row.weight}</td><td>{row.session}</td><td><span class='status {row.status.lower().replace(' ', '-').replace('/', '-')}'>{row.status}</span></td><td>{row.flag}</td></tr>"
 
     queue_rows = ""
     if not view.deployment_queue:
@@ -176,6 +176,9 @@ def render_html_report(view: DailyMonitorReportView) -> str:
     .status.alert {{ color: var(--alert-red); }}
     .status.watch {{ color: var(--watch-orange); }}
     .status.ok {{ color: var(--ok-green); }}
+    .status.intact {{ color: var(--ok-green); }}
+    .status.impaired {{ color: var(--watch-orange); }}
+    .status.broken {{ color: var(--alert-red); }}
     
     /* Macro Grid */
     .macro-grid {{
@@ -198,7 +201,7 @@ def render_html_report(view: DailyMonitorReportView) -> str:
     /* Module Grid */
     .module-grid {{
         display: grid;
-        grid-template-columns: repeat(4, 1fr);
+        grid-template-columns: repeat(3, 1fr);
         gap: 15px;
     }}
     .module-card {{
@@ -208,7 +211,7 @@ def render_html_report(view: DailyMonitorReportView) -> str:
         border-top: 3px solid var(--navy);
     }}
     .module-card h4 {{ margin: 0 0 5px 0; color: var(--navy); font-size: 12px; }}
-    .module-card .state-label {{ font-weight: bold; color: var(--alert-red); margin-bottom: 2px; }}
+    .module-card .state-label {{ font-weight: bold; color: var(--navy); margin-bottom: 2px; }}
     .module-card .sub-label {{ font-family: 'Merriweather', serif; font-weight: bold; font-size: 14px; margin-bottom: 8px; }}
     .module-card p {{ margin: 0; font-size: 10px; color: #555; }}
     
@@ -270,7 +273,7 @@ def render_html_report(view: DailyMonitorReportView) -> str:
 
     <h2>3 &middot; EQUITY BOOK — CEILING {view.equity_ceiling}</h2>
     <table>
-        <tr><th>Ticker</th><th>Name</th><th>Wt.</th><th>Session</th><th>Status</th><th>Flag</th></tr>
+        <tr><th>Ticker</th><th>Name</th><th>Wt.</th><th>Action</th><th>Status</th><th>Flag</th></tr>
         {equity_rows}
     </table>
 

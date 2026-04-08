@@ -3,7 +3,7 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Literal, List
+from typing import Literal, List, Optional
 
 from .order_request import OrderRequest
 
@@ -18,6 +18,10 @@ class Position:
     average_cost: float
     market_value: float
     con_id: int
+    expiry: Optional[str] = None
+    strike: Optional[float] = None
+    right: Optional[str] = None
+    multiplier: Optional[float] = None
 
 class Broker(ABC):
     """

@@ -52,6 +52,9 @@ class DailyMonitor:
     # Execution & Portfolio
     decision_queue: List[Dict[str, Any]]
     portfolio_summary: Dict[str, float]
+    position_weights: Dict[str, float] = field(default_factory=dict)
+    macro_inputs: Dict[str, float] = field(default_factory=dict)
+    sleeve_weights: Dict[str, float] = field(default_factory=dict)
     
 # --- Monitor Generation Logic ---
 
@@ -68,7 +71,11 @@ def generate_daily_monitor(
     cdf_statuses: List[CDFStatus],
     rss_result: RSSResult,
     safety_status: IncapacitationStatus,
-    nav: float
+    nav: float,
+    portfolio_summary: Optional[Dict[str, float]] = None,
+    position_weights: Optional[Dict[str, float]] = None,
+    macro_inputs: Optional[Dict[str, float]] = None,
+    sleeve_weights: Optional[Dict[str, float]] = None,
 ) -> DailyMonitor:
     """
     Aggregates all module outputs into a single DailyMonitor payload.
@@ -115,13 +122,12 @@ def generate_daily_monitor(
             })
 
     # 2. Compile Portfolio Summary (L4-L5 context)
-    # This would pull from the Master Engine and Kevlar modules.
-    portfolio_summary = {
+    portfolio_summary = portfolio_summary or {
         "nav": nav,
-        "equity_exposure_pct": 0.58, 
-        "ai_sector_exposure_pct": 0.20,
-        "defensive_sleeve_pct": 0.14,
-        "cash_hedge_pct": 0.08
+        "equity_exposure_pct": 0.0,
+        "ai_sector_exposure_pct": 0.0,
+        "defensive_sleeve_pct": 0.0,
+        "cash_hedge_pct": 0.0
     }
 
     # 3. Finalize the Monitor Payload
@@ -140,7 +146,10 @@ def generate_daily_monitor(
         retail_sentiment=rss_result,
         safety_status=safety_status,
         decision_queue=decision_queue,
-        portfolio_summary=portfolio_summary
+        portfolio_summary=portfolio_summary,
+        position_weights=position_weights or {},
+        macro_inputs=macro_inputs or {},
+        sleeve_weights=sleeve_weights or {}
     )
     
     # Audit Logging for Daily Snapshots

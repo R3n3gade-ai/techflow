@@ -4,7 +4,10 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import List, Literal, Optional, Tuple
+
+import datetime
 
 try:
     import ib_insync as ibi
@@ -30,18 +33,23 @@ class IBKRBroker(Broker):
 
     def __init__(
         self,
-        host: str = '127.0.0.1',
-        port: int = 4002,
-        client_id: int = 1,
+        host: Optional[str] = None,
+        port: Optional[int] = None,
+        client_id: Optional[int] = None,
         paper: bool = True,
         connect_timeout_s: float = 10.0,
     ):
-        # Detect if we are inside a docker container bridging to host via SSH tunnel
-        # The SSH tunnel forwards local 4002 to VPS localhost 4002.
-        self.host = host
-        self.port = port
-        self.client_id = client_id
-        self.paper = paper
+        # Detect connection settings from environment first so the adapter matches
+        # the live paper-trading setup instead of assuming scaffold defaults.
+        env_host = os.environ.get('IB_HOST') or os.environ.get('TWS_HOST')
+        env_port = os.environ.get('IB_PORT') or os.environ.get('TWS_PORT')
+        env_client_id = os.environ.get('IB_CLIENT_ID') or os.environ.get('TWS_CLIENT_ID')
+        env_paper = os.environ.get('IB_PAPER')
+
+        self.host = host or env_host or '127.0.0.1'
+        self.port = int(port if port is not None else (env_port or 4002))
+        self.client_id = int(client_id if client_id is not None else (env_client_id or 1))
+        self.paper = paper if env_paper is None else env_paper.strip().lower() not in {'0', 'false', 'no'}
         self.connect_timeout_s = connect_timeout_s
         
         self.ib: Optional['ibi.IB'] = None
@@ -110,41 +118,69 @@ class IBKRBroker(Broker):
     def get_positions(self) -> List[Position]:
         """Fetch current portfolio positions from the broker."""
         self._require_connection()
-        
+
         if not IB_AVAILABLE or not self.ib:
-            print("[IBKRBroker] Position snapshot scaffold invoked (no IB backend).")
-            return []
-            
+            raise RuntimeError("ib_insync backend unavailable; refusing scaffold portfolio state in live cycle.")
+
         print("[IBKRBroker] Fetching live positions...")
-        ib_positions = self.ib.positions()
-        
+
         normalized = []
-        for p in ib_positions:
-            # Note: market_value and average_cost require deeper portfolio() or accountValues() lookups
-            # in ib_insync, but we map what we have immediately from positions().
-            normalized.append(Position(
-                ticker=p.contract.symbol,
-                sec_type=p.contract.secType,
-                quantity=float(p.position),
-                average_cost=float(p.avgCost),
-                market_value=0.0, # Requires live market data or account summary
-                con_id=p.contract.conId
-            ))
-            
-        print(f"[IBKRBroker] Retrieved {len(normalized)} positions.")
+        try:
+            portfolio_items = self.ib.portfolio()
+            for item in portfolio_items:
+                contract = item.contract
+                market_value = float(item.marketValue)
+                avg_cost = float(item.averageCost)
+                quantity = float(item.position)
+                normalized.append(Position(
+                    ticker=contract.symbol,
+                    sec_type=contract.secType,
+                    quantity=quantity,
+                    average_cost=avg_cost,
+                    market_value=market_value,
+                    con_id=contract.conId,
+                    expiry=getattr(contract, 'lastTradeDateOrContractMonth', None),
+                    strike=float(contract.strike) if getattr(contract, 'strike', None) not in (None, '') else None,
+                    right=getattr(contract, 'right', None),
+                    multiplier=float(contract.multiplier) if getattr(contract, 'multiplier', None) not in (None, '') else None
+                ))
+        except Exception as e:
+            print(f"[IBKRBroker] portfolio() lookup failed ({e}); attempting positions()+ticker fallback.")
+            ib_positions = self.ib.positions()
+            contracts = [p.contract for p in ib_positions]
+            tickers = self.ib.reqTickers(*contracts) if contracts else []
+            ticker_map = {t.contract.conId: t for t in tickers}
+
+            for p in ib_positions:
+                ticker = ticker_map.get(p.contract.conId)
+                market_price = ticker.marketPrice() if ticker else None
+                quantity = float(p.position)
+                market_value = float(quantity * market_price) if market_price not in (None, 0, -1) else 0.0
+                normalized.append(Position(
+                    ticker=p.contract.symbol,
+                    sec_type=p.contract.secType,
+                    quantity=quantity,
+                    average_cost=float(p.avgCost),
+                    market_value=market_value,
+                    con_id=p.contract.conId,
+                    expiry=getattr(p.contract, 'lastTradeDateOrContractMonth', None),
+                    strike=float(p.contract.strike) if getattr(p.contract, 'strike', None) not in (None, '') else None,
+                    right=getattr(p.contract, 'right', None),
+                    multiplier=float(p.contract.multiplier) if getattr(p.contract, 'multiplier', None) not in (None, '') else None
+                ))
+
+        print(f"[IBKRBroker] Retrieved {len(normalized)} positions with market values.")
         return normalized
 
     def get_nav(self) -> float:
         """Fetch current Net Asset Value from the broker."""
         self._require_connection()
-        
+
         if not IB_AVAILABLE or not self.ib:
-            print("[IBKRBroker] NAV scaffold invoked (no IB backend). Returning default $50M.")
-            return 50_000_000.0
+            raise RuntimeError("ib_insync backend unavailable; refusing scaffold NAV in live cycle.")
 
         print("[IBKRBroker] Fetching live NAV...")
         try:
-            # NetLiquidation value is the standard NAV proxy in IBKR
             account_values = self.ib.accountValues()
             for val in account_values:
                 if val.tag == 'NetLiquidation' and val.currency == 'USD':
@@ -152,9 +188,9 @@ class IBKRBroker(Broker):
                     print(f"[IBKRBroker] Live NAV retrieved: ${nav:,.2f}")
                     return nav
         except Exception as e:
-            print(f"[IBKRBroker] Failed to fetch NAV: {e}. Falling back to default.")
-            
-        return 50_000_000.0
+            raise RuntimeError(f"Failed to fetch live NAV from IBKR: {e}")
+
+        raise RuntimeError("NetLiquidation USD value not returned by IBKR.")
 
     def submit_order(self, order: OrderRequest) -> str:
         self._require_connection()
@@ -170,31 +206,46 @@ class IBKRBroker(Broker):
             print(f"[IBKRBroker] Scaffold submit: {order}")
             return f"paper_scaffold_{order.correlation_id}_{order.ticker.lower()}"
 
-        print(f"[IBKRBroker] Preparing live paper order for {order.action} {order.quantity} {order.ticker}")
-        
+        print(f"[IBKRBroker] Preparing live paper order for {order.action} {order.quantity} {order.quantity_kind} {order.ticker}")
+
         # 1. Contract Resolution
         if order.action in {'BUY_PUT', 'SELL_PUT', 'SELL_CALL'}:
-            # Fallback or fully dynamic contract resolution will go here
-            if getattr(order, 'con_id', None):
+            if order.con_id:
                 contract = ibi.Contract(conId=order.con_id)
+            elif order.expiry and order.strike is not None and order.option_right:
+                contract = ibi.Option(order.ticker, order.expiry.replace('-', ''), float(order.strike), order.option_right, 'SMART')
             else:
-                print("[IBKRBroker] Option contract resolution requires con_id or strike/expiry metadata. Halting submit.")
-                raise NotImplementedError("Dynamic option contract scanning is pending implementation in PTRH.")
+                raise NotImplementedError("Option order requires con_id or expiry/strike/right metadata.")
         else:
             contract = ibi.Stock(order.ticker, 'SMART', 'USD')
-            
-        # 2. Order Translation
-        ib_action = 'BUY' if order.action == 'BUY' else 'SELL'
-        
+
+        # 2. Quantity semantics
+        if order.quantity_kind == 'NOTIONAL_USD':
+            if order.action in {'BUY_PUT', 'SELL_PUT', 'SELL_CALL'}:
+                raise NotImplementedError("Option orders require contract quantity, not notional USD, before broker submission.")
+
+            qualified = self.ib.qualifyContracts(contract)
+            if not qualified:
+                raise RuntimeError(f"Could not qualify equity contract for {order.ticker}.")
+            ticker_snapshot = self.ib.reqTickers(qualified[0])[0]
+            market_price = ticker_snapshot.marketPrice()
+            if market_price in (None, 0, -1):
+                raise RuntimeError(f"No valid market price available for {order.ticker} to convert notional order.")
+            broker_quantity = max(1, int(round(float(order.quantity) / float(market_price))))
+        else:
+            broker_quantity = float(order.quantity)
+
+        # 3. Order Translation
+        ib_action = 'BUY' if order.action in {'BUY', 'BUY_PUT'} else 'SELL'
+
         if order.order_type == 'MARKET':
-            ib_order = ibi.MarketOrder(ib_action, float(order.quantity))
+            ib_order = ibi.MarketOrder(ib_action, broker_quantity)
         elif order.order_type == 'LIMIT':
-            ib_order = ibi.LimitOrder(ib_action, float(order.quantity), float(order.limit_price or 0.0))
+            ib_order = ibi.LimitOrder(ib_action, broker_quantity, float(order.limit_price or 0.0))
         elif order.order_type == 'VWAP':
-            # Simplified IBALGO VWAP representation
             ib_order = ibi.Order(
                 action=ib_action,
-                totalQuantity=float(order.quantity),
+                totalQuantity=broker_quantity,
                 orderType='VWAP',
                 algoStrategy='VWAP',
                 algoParams=[ibi.TagValue('maxPctVol', '0.1')]
@@ -264,8 +315,34 @@ class IBKRBroker(Broker):
         self._require_connection()
         if not IB_AVAILABLE or not self.ib:
             return []
-            
-        # Ensure we don't overwhelm the API; qualify and request tickers
+
         qualified = self.ib.qualifyContracts(*contracts)
         tickers = self.ib.reqTickers(*qualified)
         return tickers
+
+    def get_recent_close(self, ticker: str, days_ago: int = 45) -> Optional[float]:
+        """Fetch an approximate historical close via IBKR daily bars."""
+        self._require_connection()
+        if not IB_AVAILABLE or not self.ib:
+            return None
+
+        contract = ibi.Stock(ticker, 'SMART', 'USD')
+        qualified = self.ib.qualifyContracts(contract)
+        if not qualified:
+            return None
+
+        duration_days = max(60, days_ago + 10)
+        bars = self.ib.reqHistoricalData(
+            qualified[0],
+            endDateTime='',
+            durationStr=f'{duration_days} D',
+            barSizeSetting='1 day',
+            whatToShow='TRADES',
+            useRTH=True,
+            formatDate=1
+        )
+        if not bars:
+            return None
+
+        idx = max(0, len(bars) - (days_ago + 1))
+        return float(bars[idx].close)

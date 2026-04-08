@@ -71,7 +71,8 @@ class PTRHStatus:
 # --- Core Execution Support ---
 
 def _submit_ptrh_order(action: Literal['BUY_PUT', 'SELL_PUT'], 
-                       notional: float, 
+                       quantity: float,
+                       quantity_kind: Literal['CONTRACTS', 'NOTIONAL_USD'],
                        signal: str, 
                        tier: int = 0,
                        contract: Optional[OptionsPosition] = None):
@@ -83,7 +84,12 @@ def _submit_ptrh_order(action: Literal['BUY_PUT', 'SELL_PUT'],
     order = OrderRequest(
         ticker=contract.ticker if contract else "QQQ",
         action=action,
-        quantity=notional, # Transitional semantics: hedge notional placeholder
+        quantity=quantity,
+        quantity_kind=quantity_kind,
+        con_id=contract.con_id if contract else None,
+        strike=contract.strike if contract else None,
+        expiry=contract.expiry if contract else None,
+        option_right='P' if contract and contract.option_type == 'PUT' else None,
         order_type="LIMIT" if tier == 0 else "MARKET",
         limit_price=contract.ask if contract and contract.ask else None,
         execution_window_min=30,
@@ -112,7 +118,7 @@ def _submit_ptrh_order(action: Literal['BUY_PUT', 'SELL_PUT'],
     ))
     
     # Placeholder: print to console for development visibility
-    print(f"[PTRH] {action} planned for {order.ticker}: {signal} (${notional:,.2f} notional)")
+    print(f"[PTRH] {action} planned for {order.ticker}: {signal} ({quantity} {quantity_kind})")
     return order
 
 def _resolve_delta_primary_strike(broker: Broker, ticker: str, target_delta: float = -0.35) -> Optional[OptionsPosition]:
@@ -242,6 +248,18 @@ def _resolve_delta_primary_strike(broker: Broker, ticker: str, target_delta: flo
         print(f"[PTRH] Error resolving strike: {e}")
         return None
 
+def _estimate_contracts_for_notional(target_notional: float, contract: Optional[OptionsPosition]) -> int:
+    if contract is None:
+        return 0
+    option_premium = contract.ask or contract.bid
+    if option_premium is None or option_premium <= 0:
+        return 0
+    contract_multiplier = 100.0
+    per_contract_cost = float(option_premium) * contract_multiplier
+    if per_contract_cost <= 0:
+        return 0
+    return max(1, int(round(float(target_notional) / per_contract_cost)))
+
 # --- Main Logic Module ---
 
 def run_ptrh_module(cam_inputs: CamInputs, 
@@ -274,23 +292,34 @@ def run_ptrh_module(cam_inputs: CamInputs,
         target_contract = _resolve_delta_primary_strike(broker, "QQQ", -0.35)
     
     if not target_contract:
-        # Simulated execution selection (Standard Gate 1 fallback for mocked scenarios)
-        target_contract = OptionsPosition(
-            ticker="QQQ", option_type="PUT", strike=480.0, expiry="2026-06-15",
-            contracts=1, notional_value=0.0, delta=-0.34, bid=1.15, ask=1.20
-        )
+        alerts.append("PTRH target contract resolution failed; no compliant live contract returned.")
+        append_to_log(SessionLogEntry(
+            timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            action_type='PTRH_TARGET_UNRESOLVED',
+            triggering_module='PTRH',
+            triggering_signal='No compliant live target contract returned from options scan.',
+            ticker='QQQ'
+        ))
         
-    selected_contract_delta = target_contract.delta or -0.34
-    selected_contract_dte = target_contract.dte
-    selected_contract_otm_pct = 0.065 # Mocked for logging if not derived
+    selected_contract_delta = target_contract.delta if target_contract and target_contract.delta is not None else None
+    selected_contract_dte = target_contract.dte if target_contract else None
+    selected_contract_otm_pct = None
     
     # 3. Check DTE for rolls (Priority 1)
     roll_occurred = False
     for pos in current_positions:
         if pos.dte <= 30:
             signal = f"DTE Roll: {pos.expiry} is at {pos.dte} days. Delta-Optimal Strike Selection (-0.35 tgt) via Gate 1."
-            generated_orders.append(_submit_ptrh_order('SELL_PUT', pos.notional_value, signal, contract=pos)) # Sell current
-            generated_orders.append(_submit_ptrh_order('BUY_PUT', pos.notional_value, signal, contract=target_contract))  # Buy next
+            if target_contract is None:
+                alerts.append(f"PTRH roll due for {pos.expiry}, but no live replacement contract was resolved.")
+                continue
+            sell_contracts = max(1, int(abs(pos.contracts)))
+            buy_contracts = _estimate_contracts_for_notional(pos.notional_value, target_contract)
+            if buy_contracts <= 0:
+                alerts.append("PTRH roll contract sizing failed; no executable contract count derived.")
+                continue
+            generated_orders.append(_submit_ptrh_order('SELL_PUT', sell_contracts, 'CONTRACTS', signal, contract=pos))
+            generated_orders.append(_submit_ptrh_order('BUY_PUT', buy_contracts, 'CONTRACTS', signal, contract=target_contract))
             last_action = "ROLL"
             roll_occurred = True
     
@@ -304,12 +333,23 @@ def run_ptrh_module(cam_inputs: CamInputs,
             action = 'BUY_PUT' if delta_notional > 0 else 'SELL_PUT'
             signal = f"Drift Correction: actual {actual_pct:.2%} vs target {target_pct:.2%}. Delta-Optimal Strike Selected. Delta: ${abs(delta_notional):,.2f}"
             
-            # If we are BUYING puts to increase coverage, we buy the target contract.
-            # If we are SELLING puts to decrease coverage, we sell the EXISTING contracts (FIFO/LIFO logic).
+            # If we are BUYING puts to increase coverage, we need a resolved live contract.
+            # If we are SELLING puts to decrease coverage, we sell existing contracts.
             active_contract = target_contract if action == 'BUY_PUT' else (current_positions[0] if current_positions else target_contract)
-            
-            generated_orders.append(_submit_ptrh_order(action, abs(delta_notional), signal, contract=active_contract))
-            last_action = "CORRECT_DRIFT"
+
+            if active_contract is None:
+                alerts.append("PTRH drift correction required, but no live contract was available for execution.")
+            else:
+                if action == 'BUY_PUT':
+                    contract_qty = _estimate_contracts_for_notional(abs(delta_notional), active_contract)
+                else:
+                    contract_qty = max(1, int(abs(active_contract.contracts)))
+
+                if contract_qty <= 0:
+                    alerts.append("PTRH drift correction sizing failed; no executable contract count derived.")
+                else:
+                    generated_orders.append(_submit_ptrh_order(action, contract_qty, 'CONTRACTS', signal, contract=active_contract))
+                    last_action = "CORRECT_DRIFT"
     
     # 5. Prepare Status for Monitoring
     nearest_dte = min([p.dte for p in current_positions]) if current_positions else 0

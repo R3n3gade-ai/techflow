@@ -1,19 +1,19 @@
-# ACHELION ARMS · Daily Monitor · April 09, 2026 · MOMENTUM FADING, QUEUE LOCKED · CONFIDENTIAL — GP Distribution 
-RISK_ON · Score ~0.28↓ · Queue LOCKED
+# ACHELION ARMS · Daily Monitor · April 09, 2026 · SYSTEMATIC RISK DECAY OBSERVED · CONFIDENTIAL — GP Distribution 
+RISK_ON · Score ~0.27↓ · Queue LOCKED
 *Achelion Capital Management, LLC · Architecture AB v4.0 · Not for external distribution*
 
 ---
 **ACHELION ARMS — Daily Monitor**
 April 09, 2026 · Architecture AB v4.0
 
-The ARMS daily operational sweep executed nominally, revealing a continued deterioration in the aggregate risk score to 0.28 (↓). While the overarching regime classification remains RISK_ON, the underlying momentum factors are exhibiting late-cycle exhaustion, prompting a defensive posture. The deployment queue remains strictly LOCKED pending a definitive regime transition or a stabilization of the quantitative score above the 0.35 threshold. Capital preservation protocols are currently overriding opportunistic deployment triggers.
+Despite maintaining a broader RISK_ON regime, the ARMS composite score has experienced a marginal degradation, settling at 0.27 (↓) following the daily operational sweep. Market action remains largely range-bound with no acute exogenous shocks detected via the orchestrated pipeline. However, the underlying momentum decay warrants caution, prompting the system to keep the deployment queue strictly LOCKED until a definitive structural catalyst or a reversal in the quantitative scoring threshold is observed.
 
 ---
 ### 1 · MACRO COMPASS — REGIME SCORING
 
 | Yesterday's Low | Today's Score | Score Change | Queue Trigger | Equity Ceiling | Next Catalyst |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| ~0.72 | ~0.28↓ | -0.44 | 0.65 | 40% | Next Catalyst |
+| ~0.72 | ~0.27↓ | -0.45 | 0.65 | 40% | Next Catalyst |
 
 **Score re-elevating drivers:** System synthesized drivers up.
 
@@ -30,11 +30,11 @@ The ARMS daily operational sweep executed nominally, revealing a continued deter
 ---
 ### 3 · KEY DEVELOPMENTS
 
-**DIVERGENCE IN REGIME AND MOMENTUM**
-Despite the persistence of the RISK_ON regime classification, the ARMS composite score has compressed to 0.28. This divergence typically precedes a formal regime downgrade. The orchestrated pipeline sweep indicates that while broad market liquidity remains adequate, sector-level breadth is narrowing significantly, dragging the quantitative score downward and signaling an elevated probability of near-term mean reversion.
+**OPERATIONAL SWEEP YIELDS BENIGN METRICS**
+The daily orchestrated pipeline executed without anomaly, confirming that the current score degradation is driven by internal momentum decay rather than acute structural fractures in the broader macro environment. Liquidity profiles and volatility surfaces remain within acceptable historical tolerances for a RISK_ON regime, suggesting a localized consolidation phase rather than a systemic pivot.
 
-**DEPLOYMENT QUEUE SUSPENSION**
-In accordance with strict risk management parameters, the PM decision queue has been LOCKED. Standard operational sweeps confirmed no anomalous data ingestion errors; the lock is a purely systematic response to the sub-0.30 score environment. The system will not authorize new capital outlays until the volatility surface normalizes and directional conviction metrics realign with the broader macro regime.
+**COMPOSITE SCORE DEGRADATION TO 0.27**
+Quantitative risk metrics have drifted lower to 0.27, reflecting a subtle deterioration in short-term market breadth and participation. While the overarching regime classification has not yet flipped to RISK_OFF, this downward trajectory indicates an unfavorable risk-reward asymmetry for immediate capital deployment, justifying the current restriction on new allocations.
 
 ---
 ### 4 · EQUITY BOOK — DEFENSIVE 40% CEILING
@@ -60,18 +60,18 @@ In accordance with strict risk management parameters, the PM decision queue has 
 ---
 ### 7 · MODULE STATUS
 
-- **ARAS · RISK_ON 0.28**: Live Engine output
+- **ARAS · RISK_ON 0.27**: Live Engine output
 - **ARES · Queue LOCKED**: ARES live evaluation
-- **CAM · PTRH 1.2776285714285716x**: PTRH Engine
+- **CAM · PTRH 1.2736285714285716x**: PTRH Engine
 - **MC-RSS · NEUTRAL**: Live Sentiment
 - **SAFETY · Tier 0**: Incapacitation module
 
 ---
 ### 8 · PM DECISION QUEUE
 
-**1. 1. MAINTAIN CURRENT EXPOSURES. Do not initiate new positions while the deployment queue remains systematically LOCKED.**
+**1. 1. MAINTAIN CURRENT EXPOSURE: The deployment queue remains strictly LOCKED. Do not initiate new capital allocations until the ARMS composite score demonstrates a sustained reversal.**
 
-**2. 2. MONITOR THRESHOLD LEVELS. The queue will automatically unlock if the ARMS score reclaims the 0.35 level or if a formal transition to a RISK_OFF regime triggers mandatory hedging protocols.**
+**2. 2. MONITOR FOR REGIME SHIFT: Prepare for a potential downgrade to a neutral or RISK_OFF regime if the composite score continues its downward trajectory below the 0.20 critical support level.**
 
-**3. 3. PREPARE FOR REGIME SHIFT. Given the downward trajectory of the score (0.28 ↓), review liquidity buffers and ensure all automated stop-loss parameters are fully synced with the execution algorithms.**
+**3. 3. OPTIMIZE EXISTING HEDGES: Utilize the current low-volatility environment confirmed by the daily operational sweep to roll existing derivative overlays and optimize portfolio defense mechanisms.**
 

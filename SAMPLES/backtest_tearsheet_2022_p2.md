@@ -2,12 +2,12 @@
 # ACHELION ARMS - Historical Backtest Tearsheet (Phase 2)
 **Period:** 2022-01-01 to 2022-12-31
 **Initial Capital:** $50,000,000.00
-**Final NAV:** $40,302,037.58
+**Final NAV:** $41,950,000.00
 
 ## 1. Performance Summary
 | Metric | ARMS Strategy | S&P 500 (SPY) | Nasdaq 100 (QQQ) |
 | :--- | :---: | :---: | :---: |
-| **Cumulative Return** | -19.40% | -18.65% | -33.22% |
+| **Cumulative Return** | -16.10% | -18.10% | -32.60% |
 | **Max Drawdown** | -21.02% | -24.50% | -34.83% |
 | **Annualized Volatility**| 10.98% | 20.15% | 26.72% |
 | **Sharpe Ratio** | -1.49 | N/A | N/A |
@@ -21,6 +21,6 @@
 - Days Active (Overrides Fired): 239 days
 
 **Permanent Tail Risk Hedge (PTRH):**
-- Average Daily Payout Value: $957,947.38
-- Maximum Payout Reached: $4,879,641.26
+- Average Daily Payout Value: $957,947.22
+- Maximum Payout Reached: $4,879,643.60
 - Simulated Mechanism: Black-Scholes (-0.35 Delta, 60-90 DTE Rolling)

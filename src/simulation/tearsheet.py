@@ -5,7 +5,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 import pandas as pd
 import numpy as np
 
-def generate_tearsheet(history: pd.DataFrame, start_date: str, end_date: str, initial_capital: float):
+def generate_tearsheet(history: pd.DataFrame, start_date: str, end_date: str, initial_capital: float, phase: int = 1):
     # Benchmark Returns (assuming we buy and hold SPY and QQQ from Day 1)
     first_spy = history['SPY_Price'].iloc[0]
     last_spy = history['SPY_Price'].iloc[-1]
@@ -55,7 +55,7 @@ def generate_tearsheet(history: pd.DataFrame, start_date: str, end_date: str, in
     pds_active_days = (history['PDS_Ceiling'] < 1.0).sum()
     
     report = f"""
-# ACHELION ARMS - Historical Backtest Tearsheet
+# ACHELION ARMS - Historical Backtest Tearsheet (Phase {phase})
 **Period:** {start_date} to {end_date}
 **Initial Capital:** ${initial_capital:,.2f}
 **Final NAV:** ${final_nav:,.2f}
@@ -77,8 +77,16 @@ def generate_tearsheet(history: pd.DataFrame, start_date: str, end_date: str, in
     report += f"\n**Portfolio Drawdown Sentinel (PDS):**\n"
     report += f"- Days Active (Overrides Fired): {pds_active_days} days\n"
     
+    if phase == 2:
+        ptrh_avg = history['PTRH_Value'].mean()
+        ptrh_max = history['PTRH_Value'].max()
+        report += f"\n**Permanent Tail Risk Hedge (PTRH):**\n"
+        report += f"- Average Daily Payout Value: ${ptrh_avg:,.2f}\n"
+        report += f"- Maximum Payout Reached: ${ptrh_max:,.2f}\n"
+        report += f"- Simulated Mechanism: Black-Scholes (-0.35 Delta, 60-90 DTE Rolling)\n"
+
     # Save the report
-    with open('/data/.openclaw/workspace/achelion_arms/SAMPLES/backtest_tearsheet_2020.md', 'w') as f:
+    with open(f'/data/.openclaw/workspace/achelion_arms/SAMPLES/backtest_tearsheet_{start_date[:4]}_p{phase}.md', 'w') as f:
         f.write(report)
         
     print(report)
@@ -86,4 +94,4 @@ def generate_tearsheet(history: pd.DataFrame, start_date: str, end_date: str, in
 if __name__ == "__main__":
     from simulation.historical_engine import run_simulation
     res = run_simulation("2020-01-01", "2020-12-31")
-    generate_tearsheet(res.history, "2020-01-01", "2020-12-31", 50000000.0)
+    generate_tearsheet(res.history, "2020-01-01", "2020-12-31", 50000000.0, phase=1)

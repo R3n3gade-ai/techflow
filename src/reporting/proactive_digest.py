@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
 
 # --- Internal Imports ---
-from intelligence.claude_wrapper import claude_wrapper
+from intelligence.llm_wrapper import llm_wrapper
 from reporting.audit_log import SessionLogEntry
 
 # --- Data Structures ---
@@ -83,7 +83,7 @@ class ProactiveIntelligenceDigest:
         """
         
         # 2. Call Claude API for Narrative Generation
-        response_json = claude_wrapper.call(
+        response_json = llm_wrapper.call(
             task_type='lp_narrative',
             prompt=prompt,
             knowledge_base_query=f'Achelion monthly activity {month} {year}'

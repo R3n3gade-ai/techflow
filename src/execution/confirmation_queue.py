@@ -97,20 +97,33 @@ class ConfirmationQueue:
         """Returns all actions currently in a 'PENDING' state."""
         return [a for a in self._queue.values() if a.status == 'PENDING']
 
-    def submit_response(self, action_id: str, response: Literal['EXECUTE', 'HOLD', 'VETO'], rationale: Optional[str] = None):
+    def submit_response(self, action_id: str, response: Literal['EXECUTE_NO_INFO', 'HOLD_NEW_INFO', 'VETO_NEW_INFO'], rationale: Optional[str] = None):
         """
-        Submits a PM's response to a queued action (Tier 1/2 Information-Quality Interface).
+        Submits a PM's response to a queued action via the Information-Quality Interface (FSD Section 11.5).
+        Options:
+        - EXECUTE_NO_INFO: PM has no new info, silence is trust. Executes immediately.
+        - HOLD_NEW_INFO: PM has Cat A/B info. Opens source declaration form, pauses execution.
+        - VETO_NEW_INFO: PM vetoes execution outright. Requires full documented rationale + GP cosign.
         """
         action = self._queue.get(action_id)
         if not action or action.status != 'PENDING':
             print(f"[ConfirmationQueue] Action {action_id} not found or already actioned.")
             return
 
-        if response == 'VETO' and not rationale:
-            print("[ConfirmationQueue] VETO response requires a rationale.")
+        if response == 'VETO_NEW_INFO' and not rationale:
+            print("[ConfirmationQueue] VETO_NEW_INFO response requires a documented rationale.")
+            return
+            
+        if response == 'HOLD_NEW_INFO' and not rationale:
+            print("[ConfirmationQueue] HOLD_NEW_INFO response requires a declared source category/insight.")
             return
 
-        action.status = f"{response}ED" # e.g., EXECUTED, VETOED
+        if response == 'EXECUTE_NO_INFO':
+            action.status = 'EXECUTED'
+        elif response == 'HOLD_NEW_INFO':
+            action.status = 'HELD'
+        elif response == 'VETO_NEW_INFO':
+            action.status = 'VETOED'
         action.pm_rationale = rationale
         action.responded_at = datetime.now(timezone.utc)
         

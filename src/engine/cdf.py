@@ -16,7 +16,10 @@ from typing import List, Dict, Literal, Optional
 
 # --- Internal Imports ---
 from reporting.audit_log import SessionLogEntry, append_to_log
+
+from reporting.audit_log import SessionLogEntry, append_to_log
 from execution.order_request import OrderRequest
+from engine.cdf_analytics import compute_live_underperformance, RelativePerformanceSnapshot
 
 # --- Data Structures ---
 
@@ -46,6 +49,24 @@ DECAY_MILESTONES = {
 EXIT_MILESTONE = 135
 
 # --- CDF Logic ---
+
+def evaluate_position_decay(ticker: str, days_underperforming_override: Optional[int] = None) -> Optional[CDFStatus]:
+    """
+    Evaluates the live underperformance of a position and returns its decay state.
+    Uses Yahoo Finance historical data to calculate actual vs QQQ performance.
+    """
+    # Default to checking the 45-day milestone
+    days_to_check = days_underperforming_override or 45
+    
+    snapshot = compute_live_underperformance(ticker, days_to_check)
+    if not snapshot:
+        return None
+        
+    return calculate_position_decay(
+        ticker=ticker,
+        days_underperforming=snapshot.days_back,
+        underperformance_pp=snapshot.underperformance_pp
+    )
 
 def calculate_position_decay(
     ticker: str,

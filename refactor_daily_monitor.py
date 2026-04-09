@@ -1,4 +1,6 @@
-"""
+import os
+
+new_code = r'''"""
 ARMS Reporting: Daily Monitor v4.0 (Architecture AB)
 
 Generates the definitive institutional Daily Monitor. It fuses hard quantitative 
@@ -208,3 +210,7 @@ def run_daily_monitor(raw_inputs: Dict[str, Any], market_context: str) -> str:
     )
     
     return renderer.render_markdown(monitor)
+'''
+
+with open("/data/.openclaw/workspace/achelion_arms/src/reporting/daily_monitor.py", "w") as f:
+    f.write(new_code)

@@ -16,8 +16,10 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Optional
 
 # --- Internal Imports ---
-from intelligence.claude_wrapper import claude_wrapper
+from intelligence.llm_wrapper import llm_wrapper
+
 from config.scan_universe import AI_INFRASTRUCTURE_UNIVERSE
+from data_feeds.sec_edgar_plugin import sec_edgar_plugin
 from reporting.audit_log import SessionLogEntry, append_to_log
 
 # --- Data Structures ---
@@ -36,11 +38,11 @@ class ScanCandidate:
 
 def _fetch_documents(ticker: str) -> str:
     """
-    Placeholder: Fetches 10-K, 10-Q, and latest earnings transcript from 
-    the SEC EDGAR feed plugin (Frontier F1).
+    Fetches the actual 10-K, 10-Q, and 8-K filings from the SEC EDGAR 
+    feed plugin (Frontier F1 Layer). Caps each document to 15,000 characters
+    to maintain LLM context boundaries.
     """
-    # In production, this would call SecEdgarPlugin.fetch_docs(ticker)
-    return f"Latest filings and transcripts for {ticker}."
+    return sec_edgar_plugin.fetch_docs(ticker, max_filings=2, max_chars_per_doc=15000)
 
 def _calculate_gate3_score(ticker: str) -> float:
     """
@@ -78,12 +80,18 @@ def run_weekly_scan() -> List[ScanCandidate]:
         """
         
         # Note: claude_wrapper handles the API call and task management
-        response_json = claude_wrapper.call(
+        response_json = llm_wrapper.call(
             task_type='sentinel_scan',
             prompt=prompt,
             knowledge_base_query=f'{ticker} SENTINEL analysis'
         )
         
+                # Strip markdown if present
+        if response_json.startswith("```json"):
+            response_json = response_json[7:-3].strip()
+        elif response_json.startswith("```"):
+            response_json = response_json[3:-3].strip()
+            
         try:
             res = json.loads(response_json)
             if res.get('gate1_pass') and res.get('gate2_pass'):

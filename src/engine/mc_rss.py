@@ -18,7 +18,11 @@ from typing import List, Dict, Literal, Optional
 
 # --- Internal Imports ---
 from data_feeds.interfaces import SignalRecord
+
+from data_feeds.interfaces import SignalRecord
 from reporting.audit_log import SessionLogEntry, append_to_log
+from engine.mc_rss_analytics import fetch_live_sentiment
+
 
 # --- Data Structures ---
 
@@ -34,6 +38,21 @@ class RSSResult:
     timestamp: str = field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
 
 # --- MC-RSS Logic ---
+
+def evaluate_live_sentiment() -> RSSResult:
+    """
+    Wrapper that fetches live NAAIM/Sentiment data and runs the MC-RSS formula.
+    """
+    live_inputs = fetch_live_sentiment()
+    # Provide a rolling history proxy for the z-score calculation
+    history_proxy = [1.0e9, 1.1e9, 1.2e9, 1.3e9]
+    
+    return calculate_mc_rss(
+        retail_net_buying_usd=live_inputs.retail_net_buying_usd,
+        retail_history_30d=history_proxy,
+        naaim_exposure_index=live_inputs.naaim_exposure_index,
+        aaii_bull_bear_spread=live_inputs.aaii_bull_bear_spread
+    )
 
 def calculate_mc_rss(
     retail_net_buying_usd: float, # VandaTrack daily net flow
@@ -51,6 +70,7 @@ def calculate_mc_rss(
         import statistics
         mean = statistics.mean(retail_history_30d)
         stdev = statistics.stdev(retail_history_30d) if len(retail_history_30d) > 1 else 1.0
+        if stdev == 0.0: stdev = 1.0
         retail_z = (retail_net_buying_usd - mean) / stdev
     else:
         retail_z = 0.0

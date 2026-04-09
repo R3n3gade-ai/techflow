@@ -1,0 +1,23 @@
+{
+    "last_updated": "2026-04-09T20:02:44.986287+00:00",
+    "records": [
+        {
+            "thesis_id": "thm_ARM_a0da34f8",
+            "ticker": "ARM",
+            "status": "ACTIVE",
+            "gate1_pass": true,
+            "gate1_rationale": "ARM's energy-efficient architecture is foundational to the global transition toward ubiquitous AI, edge computing, and power-constrained data centers. This represents a structural, civilizational shift in compute architecture away from legacy x86, rather than a transient product cycle.",
+            "gate2_pass": true,
+            "gate2_rationale": "ARM holds a near-monopoly in mobile computing architecture and is increasingly the default for custom hyperscaler silicon (e.g., AWS Graviton, Nvidia Grace). Its massive software ecosystem and developer base make it virtually impossible to route around in the current technological paradigm.",
+            "gate3_raw_score": 16.0,
+            "gate3_rationale": "Multiple mispricing (4/10): High absolute valuation limits extreme multiple mispricing, though v9 royalty expansion provides upside. Institutional positioning gap (5/10): Constrained by low free float due to SoftBank's majority ownership, leading to artificial scarcity. Consensus framing gap (7/10): The street still heavily anchors ARM to smartphone cycles, underestimating the margin expansion from Compute Subsystems (CSS) and AI data center penetration. Total: 16.0/30.",
+            "gate4_fem_impact": "NORMAL->NORMAL",
+            "gate5_regime_at_entry": "RISK_ON",
+            "gate6_source_category": "Cat B",
+            "mics_score": 7.533333333333333,
+            "mics_c_level": 8,
+            "created_at": "2026-04-09T20:02:29.102892+00:00",
+            "updated_at": "2026-04-09T20:02:44.986091+00:00"
+        }
+    ]
+}

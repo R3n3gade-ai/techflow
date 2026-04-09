@@ -17,7 +17,7 @@ FRED_SERIES_IDS: Dict[str, str] = {
     "10Y_TREASURY_YIELD": "DGS10",
     "VIX_INDEX": "VIXCLS",
     "HY_CREDIT_SPREAD": "BAMLH0A0HYM2",
-    "PMI_NOWCAST": "ISM/MAN_PMI"  # ISM Manufacturing PMI (used as proxy if S&P Global not available)
+    # "PMI_NOWCAST": "ISM/MAN_PMI"  # Removed, moving PMI to dedicated plugin  # ISM Manufacturing PMI (used as proxy if S&P Global not available)
 }
 
 class FredPlugin(FeedPlugin):

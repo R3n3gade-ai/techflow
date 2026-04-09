@@ -57,15 +57,22 @@ def load_sentinel_records() -> Dict[str, SentinelRecord]:
     return records
 
 
+from engine.sentinel_workflow import sentinel_workflow
+
 def build_mics_input_for_ticker(ticker: str, current_regime: str, fallback_fem_impact: str = 'NORMAL->NORMAL') -> SentinelGateInputs:
-    records = load_sentinel_records()
-    rec: Optional[SentinelRecord] = records.get(ticker.upper())
-    if rec:
+    """
+    Truthful fallback that reads from the new durable SENTINEL v2.0 workflow state.
+    If no active thesis exists, it provides the required structured fallback, 
+    low-conviction inputs so the system can still operate without crashing.
+    """
+    active_thesis = sentinel_workflow.get_active_thesis(ticker.upper())
+    
+    if active_thesis:
         return SentinelGateInputs(
-            gate3_raw_score=rec.gate3_raw_score,
-            source_category=rec.source_category,  # type: ignore[arg-type]
-            fem_impact=rec.fem_impact,
-            regime_at_entry=rec.regime_at_entry
+            gate3_raw_score=active_thesis.gate3_raw_score,
+            source_category=active_thesis.gate6_source_category,  # type: ignore[arg-type]
+            fem_impact=active_thesis.gate4_fem_impact,
+            regime_at_entry=active_thesis.gate5_regime_at_entry
         )
 
     # Truthful fallback: still explicit and deterministic, but lower-conviction than a true SENTINEL record.

@@ -28,19 +28,32 @@ class LLMWrapper:
     Supports Anthropic Claude, Google Gemini, and OpenAI ChatGPT.
     """
 
-    def __init__(self, provider: Literal['anthropic', 'google', 'openai'] = 'anthropic', model: Optional[str] = None):
-        self.provider = provider
-        
-        # Set default models based on provider if not explicitly passed
-        if model:
-            self.model = model
+    def __init__(self, provider: Literal['anthropic', 'google', 'openai'] = 'google', model: Optional[str] = None):
+        # Try to get provider/model from env
+        env_model = os.environ.get('DEFAULT_LLM_MODEL')
+        if env_model and not model:
+            if 'gemini' in env_model:
+                self.provider = 'google'
+                self.model = env_model
+            elif 'gpt' in env_model or 'o1' in env_model:
+                self.provider = 'openai'
+                self.model = env_model
+            elif 'claude' in env_model:
+                self.provider = 'anthropic'
+                self.model = env_model
         else:
-            if provider == 'anthropic':
-                self.model = "claude-3-5-sonnet-20241022"
-            elif provider == 'google':
-                self.model = "gemini-2.5-pro"
-            elif provider == 'openai':
-                self.model = "gpt-4o"
+            self.provider = provider
+            # Set default models based on provider if not explicitly passed
+            if model:
+                self.model = model
+            else:
+                if self.provider == 'anthropic':
+                    self.model = "claude-3-5-sonnet-20241022"
+                elif self.provider == 'google':
+                    self.model = "gemini-3.1-pro-preview"
+                elif self.provider == 'openai':
+                    self.model = "gpt-4o"
+
                 
         print(f"[LLMWrapper] Initialized with provider: {self.provider.upper()}, model: {self.model}")
 

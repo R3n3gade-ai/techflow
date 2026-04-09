@@ -1,4 +1,4 @@
-# ACHELION ARMS · Daily Monitor · April 09, 2026 · SYSTEMATIC RISK DECAY OBSERVED · CONFIDENTIAL — GP Distribution 
+# ACHELION ARMS · Daily Monitor · April 09, 2026 · MOMENTUM FADING, QUEUE LOCKED · CONFIDENTIAL — GP Distribution 
 RISK_ON · Score ~0.27↓ · Queue LOCKED
 *Achelion Capital Management, LLC · Architecture AB v4.0 · Not for external distribution*
 
@@ -6,7 +6,7 @@ RISK_ON · Score ~0.27↓ · Queue LOCKED
 **ACHELION ARMS — Daily Monitor**
 April 09, 2026 · Architecture AB v4.0
 
-Despite maintaining a broader RISK_ON regime, the ARMS composite score has experienced a marginal degradation, settling at 0.27 (↓) following the daily operational sweep. Market action remains largely range-bound with no acute exogenous shocks detected via the orchestrated pipeline. However, the underlying momentum decay warrants caution, prompting the system to keep the deployment queue strictly LOCKED until a definitive structural catalyst or a reversal in the quantitative scoring threshold is observed.
+The ARMS daily operational sweep executed nominally, confirming the prevailing RISK_ON regime. However, the aggregate risk score has decayed to 0.27 (↓), reflecting a subtle deterioration in underlying market breadth and momentum factors. While the macro environment remains broadly supportive of risk assets, this negative divergence has triggered a defensive posture within the system, resulting in a LOCKED deployment queue. Capital preservation takes precedence until the score stabilizes or reverses its downward trajectory.
 
 ---
 ### 1 · MACRO COMPASS — REGIME SCORING
@@ -30,11 +30,11 @@ Despite maintaining a broader RISK_ON regime, the ARMS composite score has exper
 ---
 ### 3 · KEY DEVELOPMENTS
 
-**OPERATIONAL SWEEP YIELDS BENIGN METRICS**
-The daily orchestrated pipeline executed without anomaly, confirming that the current score degradation is driven by internal momentum decay rather than acute structural fractures in the broader macro environment. Liquidity profiles and volatility surfaces remain within acceptable historical tolerances for a RISK_ON regime, suggesting a localized consolidation phase rather than a systemic pivot.
+**PIPELINE EXECUTION AND SCORE DECAY**
+The orchestrated daily pipeline completed its operational sweep without anomaly, processing standard market data feeds. Despite the absence of acute macro shocks, the quantitative engine registered a persistent bleed in the composite risk score, dragging it down to 0.27. This suggests that while the surface-level RISK_ON regime holds, the internal market structure is experiencing localized exhaustion, warranting a pause in new capital deployment.
 
-**COMPOSITE SCORE DEGRADATION TO 0.27**
-Quantitative risk metrics have drifted lower to 0.27, reflecting a subtle deterioration in short-term market breadth and participation. While the overarching regime classification has not yet flipped to RISK_OFF, this downward trajectory indicates an unfavorable risk-reward asymmetry for immediate capital deployment, justifying the current restriction on new allocations.
+**DEPLOYMENT QUEUE STATUS: LOCKED**
+In response to the downward velocity of the risk score, the ARMS logic has automatically locked the PM decision queue. This mechanical override prevents premature allocation into a degrading momentum environment. The system will require a sustained stabilization in the score or a definitive regime shift before unlocking the queue for further systematic deployment.
 
 ---
 ### 4 · EQUITY BOOK — DEFENSIVE 40% CEILING
@@ -69,9 +69,9 @@ Quantitative risk metrics have drifted lower to 0.27, reflecting a subtle deteri
 ---
 ### 8 · PM DECISION QUEUE
 
-**1. 1. MAINTAIN CURRENT EXPOSURE: The deployment queue remains strictly LOCKED. Do not initiate new capital allocations until the ARMS composite score demonstrates a sustained reversal.**
+**1. 1. MAINTAIN CURRENT EXPOSURE. Do not initiate new risk-on deployments while the queue remains LOCKED and the score exhibits downward momentum.**
 
-**2. 2. MONITOR FOR REGIME SHIFT: Prepare for a potential downgrade to a neutral or RISK_OFF regime if the composite score continues its downward trajectory below the 0.20 critical support level.**
+**2. 2. MONITOR SCORE VELOCITY. The queue will automatically unlock when the ARMS composite score stabilizes above the 0.30 threshold or demonstrates consecutive sessions of positive divergence.**
 
-**3. 3. OPTIMIZE EXISTING HEDGES: Utilize the current low-volatility environment confirmed by the daily operational sweep to roll existing derivative overlays and optimize portfolio defense mechanisms.**
+**3. 3. PREPARE FOR REGIME SHIFT. Given the decay to 0.27, review hedging overlays and liquidity buffers in the event the system transitions from RISK_ON to NEUTRAL.**
 

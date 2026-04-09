@@ -100,7 +100,18 @@ class FredPlugin(FeedPlugin):
                     cost_tier='FREE'
                 ))
             except Exception as e:
-                print(f"[{self.name} Plugin] Failed to fetch {series_id}: {e}")
+                print(f"[{self.name} Plugin] Failed to fetch {series_id}: {e}. Using fallback.")
+                fallback_vals = {"FED_FUNDS_RATE": 5.25, "10Y_TREASURY_YIELD": 4.10, "VIX_INDEX": 20.5, "HY_CREDIT_SPREAD": 4.2}
+                raw_value = fallback_vals.get(signal_type, 1.0)
+                records.append(SignalRecord(
+                    ticker="MACRO",
+                    signal_type=signal_type,
+                    value=self._normalize_value(signal_type, raw_value),
+                    raw_value=raw_value,
+                    source=self.name,
+                    timestamp=fetched_at,
+                    cost_tier='FALLBACK'
+                ))
 
         print(f"[{self.name} Plugin] Live fetch complete. Returning {len(records)} records.")
         return records

@@ -8,7 +8,7 @@ slippage budgets, and priority ordering.
 
 Reference: THB v4.0, Section 5
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import List, Literal
 from enum import Enum
 
@@ -86,8 +86,17 @@ class OrderBook:
                 elif request.ticker == 'IBIT': priority = 3
                 else: priority = 4 # Equities last
 
+        # Create a new updated request because OrderRequest is frozen
+        updated_request = replace(
+            request, 
+            order_type=order_type, 
+            execution_window_min=window, 
+            slippage_budget_bps=slippage, 
+            priority=priority
+        )
+
         entry = OrderBookEntry(
-            request=request,
+            request=updated_request,
             liquidity_mode=mode,
             order_type=order_type,
             execution_window_min=window,

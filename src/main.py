@@ -261,10 +261,7 @@ def run_full_arms_cycle():
             )
             confirmation_queue.add_action(queued_action)
         elif order.tier == 0:
-            if broker.is_connected:
-                broker.submit_order(order)
-            else:
-                print(f"[MAIN] Broker disconnected. Cannot execute Tier 0 order: {order.action} {order.ticker}")
+            pass # Queued in OrderBook for LAEP batch execution
     
     # --- PHASE 5: THESIS INTEGRITY (CDM / TDC) ---
     print("\n[STEP 5] Running AI-Driven Thesis Audits...")
@@ -313,11 +310,24 @@ def run_full_arms_cycle():
         if order.tier == 1:
             pass # Same logic as PTRH
         elif order.tier == 0:
-            if broker.is_connected:
-                broker.submit_order(order)
-            else:
-                print(f"[MAIN] Broker disconnected. Cannot execute Tier 0 order: {order.action} {order.ticker}")
+            pass # Queued in OrderBook for LAEP batch execution
                 
+    # --- PHASE 6.8: LAEP EXECUTION WAVE ---
+    print("\n[STEP 6.8] Executing L5 Order Book (LAEP)...")
+    executable_batch = order_book.get_executable_batch()
+    if not executable_batch:
+        print("[ORDER_BOOK] No executable orders in queue.")
+    else:
+        for entry in executable_batch:
+            if entry.request.tier == 0:
+                if broker.is_connected:
+                    print(f"[ORDER_BOOK] Routing {entry.order_type} Priority {entry.priority} for {entry.request.ticker} (Slippage: {entry.slippage_budget_bps}bps)")
+                    broker.submit_order(entry.request)
+                else:
+                    print(f"[MAIN] Broker disconnected. Cannot execute Tier 0 order: {entry.request.action} {entry.request.ticker}")
+            else:
+                print(f"[ORDER_BOOK] Skipping Tier 1 order {entry.request.ticker} (Awaiting PM Confirmation in Queue).")
+
     # --- PHASE 6.5: GROWTH & RE-ENTRY (ARES / AUP) ---
     print("\n[STEP 6.5] Evaluating Growth & Re-Entry...")
     ares_res = run_ares_check(current_regime, regime_score, 0.25, rss_res.composite_rss)

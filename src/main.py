@@ -126,6 +126,16 @@ def run_full_arms_cycle():
     regime_score = calculate_macro_regime_score(signals)
     
     vix_val = next((s.value for s in signals if s.signal_type == 'VIX_INDEX'), 0.20) * 100.0
+    # Fetch intraday data for circuit breaker
+    spx_open = broker.get_recent_close('SPY', 1) or 500.0
+    spx_now = broker.get_recent_close('SPY', 0) or 500.0
+    
+    circuit_breaker.update_market_data(
+        spx_open=spx_open,
+        spx_current=spx_now,
+        vix_open=20.0,
+        vix_current=vix_val
+    )
     cb_status = circuit_breaker.evaluate()
     if cb_status.is_tripped:
         print("[MAIN] CRITICAL: Circuit Breaker TRIPPED. Autonomous execution halted.")

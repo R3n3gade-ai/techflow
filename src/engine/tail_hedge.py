@@ -1,3 +1,4 @@
+import ib_insync as ibi
 """
 ARMS Module: Permanent Tail Risk Hedge (PTRH) Full Automation
 
@@ -139,7 +140,7 @@ def _resolve_delta_primary_strike(broker: Broker, ticker: str, target_delta: flo
         today = datetime.date.today()
         
         # Pull live spot price to narrow options chain
-        underlying = getattr(broker, 'ib', None).qualifyContracts(getattr(broker, 'ib').Stock(ticker, 'SMART', 'USD'))[0] if getattr(broker, 'ib', None) else None
+        underlying = getattr(broker, 'ib', None).qualifyContracts(ibi.Stock(ticker, 'SMART', 'USD'))[0] if getattr(broker, 'ib', None) else None
         if not underlying:
             return None
         spot_ticker = broker.get_market_data([underlying])[0]

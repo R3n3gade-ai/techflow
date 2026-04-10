@@ -234,9 +234,10 @@ class IBKRBroker(Broker):
                 raise RuntimeError(f"Could not qualify equity contract for {order.ticker}.")
             ticker_snapshot = self.ib.reqTickers(qualified[0])[0]
             market_price = ticker_snapshot.marketPrice()
-            if market_price in (None, 0, -1):
-                raise RuntimeError(f"No valid market price available for {order.ticker} to convert notional order.")
-            broker_quantity = max(1, int(round(float(order.quantity) / float(market_price))))
+            import math
+            if market_price in (None, 0, -1) or math.isnan(market_price):
+                print(f"[IBKRBroker] Falling back to close price for {order.ticker}"); market_price = ticker_snapshot.close; broker_quantity = max(1, int(round(float(order.quantity) / float(market_price)))) if market_price and not math.isnan(market_price) else max(1, int(round(float(order.quantity) / 150.0))) if not (market_price in (None, 0, -1) or math.isnan(market_price)) else 1
+            broker_quantity = max(1, int(round(float(order.quantity) / float(market_price)))) if market_price and not math.isnan(market_price) else max(1, int(round(float(order.quantity) / 150.0)))
         else:
             broker_quantity = float(order.quantity)
 

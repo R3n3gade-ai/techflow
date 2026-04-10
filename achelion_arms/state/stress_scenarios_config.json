@@ -1,0 +1,10 @@
+{
+    "S1": {"name": "2008 Lehman Collapse", "qqq": -0.35, "btc": -0.35, "offsets": {"SGOL": 0.12, "SGOV": 0.05}},
+    "S2": {"name": "2020 COVID Crash", "qqq": -0.34, "btc": -0.53, "offsets": {"SGOV": 0.03}},
+    "S3": {"name": "2022 Rate Shock", "qqq": -0.22, "btc": -0.35, "offsets": {"SGOV": -0.05, "DBMF": 0.08}},
+    "S4": {"name": "Flash Crash — Intraday", "qqq": -0.10, "btc": -0.15, "offsets": {}},
+    "S5": {"name": "Hormuz Closed 90 Days", "qqq": -0.15, "btc": -0.10, "offsets": {"SGOL": 0.18, "DBMF": 0.12}},
+    "S6": {"name": "Crypto Bear", "qqq": 0.0, "btc": -0.60, "offsets": {}},
+    "S7": {"name": "Fed Shock +100bps", "qqq": -0.12, "btc": -0.20, "offsets": {"SGOV": 0.01}},
+    "S8": {"name": "AI Bubble Unwind", "qqq": -0.40, "btc": -0.20, "offsets": {"SGOL": 0.08}}
+}

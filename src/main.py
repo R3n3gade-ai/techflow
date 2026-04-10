@@ -122,8 +122,21 @@ def run_full_arms_cycle():
 
     # --- PHASE 2: MACRO & SENTIMENT (ARAS / RPE / RSS) ---
     print("\n[STEP 2] Calculating Regime & Sentiment...")
-    # 2.0 Macro Compass & ARAS
+    # 2.0 Macro Compass & ARAS Sub-Modules
     regime_score = calculate_macro_regime_score(signals)
+    
+    from modules.deleveraging_risk import run_deleveraging_check
+    from modules.margin_stress import run_margin_stress_check
+    from modules.dealer_gamma import run_dealer_gamma_check
+    
+    delev_res = run_deleveraging_check(signals)
+    margin_res = run_margin_stress_check()
+    gamma_res = run_dealer_gamma_check()
+    
+    if delev_res.status == "ACTIVE" or margin_res.status == "ACTIVE" or gamma_res.regime == "NEGATIVE":
+        print(f"[ARAS SUB-MODULES] High systemic risk detected: Delev:{delev_res.status} Margin:{margin_res.status} Gamma:{gamma_res.regime}")
+        # In a full system, these feed into the Macro Compass overlay or directly cap the ARAS ceiling.
+        # For now, we log their advisory output.
     
     vix_val = next((s.value for s in signals if s.signal_type == 'VIX_INDEX'), 0.20) * 100.0
     # Fetch intraday data for circuit breaker

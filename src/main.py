@@ -170,8 +170,15 @@ def run_full_arms_cycle():
     else:
         print(f"[PDS] Status NORMAL. Effective Ceiling remains {effective_ceiling:.0%}")
     
-    # --- PHASE 3: PORTFOLIO MAINTENANCE (CDF / DSHP) ---
+    # --- PHASE 3: PORTFOLIO MAINTENANCE & STRESS AUDITING ---
     print("\n[STEP 3] Auditing Portfolio & Performance...")
+    
+    # 3.0 Stress Scenario Library (SSL)
+    live_weights_all = {p.ticker: (p.market_value / nav) for p in live_positions if nav > 0}
+    ptrh_notional = sum(p.notional_value for p in live_puts) if 'live_puts' in locals() else 0.0 # Will be populated in Step 4, but we can rough estimate it here
+    ssl_res = run_stress_scenarios(nav, live_weights_all, ptrh_notional)
+    print(f"[SSL] Worst-Case Scenario: {ssl_res.worst_scenario} (Net P&L: {ssl_res.worst_net_loss_pct:.2%})")
+
     # 3.1 DSHP (Harvesting)
     
     # Map live defensive sleeve positions for DSHP evaluation
@@ -343,6 +350,11 @@ def run_full_arms_cycle():
     ares_res = run_ares_check(current_regime, regime_score, 0.25, rss_res.composite_rss)
     aup_res = run_aup_check(current_regime, 7.8, True, 0.15, pds_res.drawdown_pct)
     
+    from engine.slof import run_slof_manager
+    # In a full live system, current leverage is retrieved from broker (e.g. gross exposure / net liq)
+    # Using 1.0 proxy for simulation run
+    slof_status = run_slof_manager(aup_res, current_leverage=1.0)
+    
     # --- PHASE 7: CONSOLIDATION & REPORTING ---
     print("\n[STEP 7] Generating Daily Monitor v4.0...")
     raw_inputs = {
@@ -367,6 +379,7 @@ def run_full_arms_cycle():
         "defensive_sleeve": [{"ticker": p.ticker, "weight": p.market_value / nav * 100 if nav > 0 else 0, "rationale": "Live Sizing"} for p in live_positions if p.ticker in ["DBMF", "SGOV", "SGOL", "QQQ"]],
         "module_status": {
             "ARAS": {"status": f"{aras_output.regime} {aras_output.score:.2f}", "detail": "Live Engine output"},
+            "SSL": {"status": f"Worst Case: {ssl_res.worst_scenario}", "detail": f"Estimated P&L: {ssl_res.worst_net_loss_pct:.2%}"},
             "ARES": {"status": "Queue " + ("UNLOCKED" if ares_res.is_fully_cleared else "LOCKED"), "detail": "ARES live evaluation"},
             "CAM": {"status": f"PTRH {ptrh_res.multiplier}x", "detail": "PTRH Engine"},
             "MC-RSS": {"status": rss_res.signal_label, "detail": "Live Sentiment"},
@@ -374,7 +387,17 @@ def run_full_arms_cycle():
         }
     }
     
-    markdown_output = run_daily_monitor(raw_inputs, "Daily operational sweep executed normally via orchestrated pipeline.")
+    # Compile live news events into market context for the LLM
+    live_news_context = "\n".join([f"[{ev.event_type} - {ev.triggering_entity}]: {ev.headline}" for ev in event_items]) if event_items else "No major market events detected today."
+    live_market_context = f"""
+    System completed daily sweep.
+    Current VIX is {globals().get('vix', locals().get('vix', 20.0))}.
+    Current 10Y Yield is {globals().get('tn_yield', locals().get('tn_yield', 4.0))}.
+    Recent News Events shaping macro:
+    {live_news_context}
+    """
+    
+    markdown_output = run_daily_monitor(raw_inputs, live_market_context)
     report_path = f"achelion_arms/logs/daily_monitor_{now.strftime('%Y%m%d')}.md"
     with open(report_path, "w") as f:
         f.write(markdown_output)

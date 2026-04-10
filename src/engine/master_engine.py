@@ -13,7 +13,8 @@ from .kevlar import apply_kevlar_limits
 def compute_target_weights(
     mics_scores: Dict[str, int], 
     cdf_multipliers: Dict[str, float], 
-    aras_ceiling: float
+    aras_ceiling: float,
+    slof_multiplier: float = 1.0
 ) -> Dict[str, float]:
     """
     Converts 1-10 MICS scores into Conviction-Squared (C^2) target weights,
@@ -39,7 +40,9 @@ def compute_target_weights(
         raw_equity_weight = c_squared / total_c_squared
         
         # Scale by the maximum allowed equity ceiling (e.g., 40% in DEFENSIVE)
-        scaled_weight = raw_equity_weight * aras_ceiling
+        # Apply SLOF multiplier for asymmetric upside leverage (e.g. 1.25x in extreme RISK_ON)
+        effective_ceiling = min(aras_ceiling * slof_multiplier, 1.25)
+        scaled_weight = raw_equity_weight * effective_ceiling
         
         # Apply Kevlar hard limits (Max 22% single position)
         final_weight = apply_kevlar_limits(scaled_weight)

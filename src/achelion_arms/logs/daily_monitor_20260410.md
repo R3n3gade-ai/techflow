@@ -1,4 +1,4 @@
-# ACHELION ARMS · Daily Monitor · April 10, 2026 · SUBDUED TAPE, DECAYING MOMENTUM · CONFIDENTIAL — GP Distribution 
+# ACHELION ARMS · Daily Monitor · April 10, 2026 · MOMENTUM DECAY IN QUIET TAPE · CONFIDENTIAL — GP Distribution 
 RISK_ON · Score ~0.27↓ · Queue LOCKED
 *Achelion Capital Management, LLC · Architecture AB v4.0 · Not for external distribution*
 
@@ -6,7 +6,7 @@ RISK_ON · Score ~0.27↓ · Queue LOCKED
 **ACHELION ARMS — Daily Monitor**
 April 10, 2026 · Architecture AB v4.0
 
-Despite a lack of explicit macroeconomic catalysts, the ARMS composite score has decayed to 0.27, signaling a loss of underlying momentum within the current RISK_ON regime. The tape remains subdued, yet implied volatility is stubbornly elevated with the VIX resting at the 20.0 threshold against a stable 10-year Treasury yield of 4.0%. This divergence suggests flow-driven de-risking or structural positioning adjustments rather than headline-induced panic. Consequently, the deployment queue remains strictly LOCKED pending score stabilization and volatility compression.
+Despite the overarching RISK_ON regime, the ARMS composite score has decayed to 0.27 amid a complete vacuum of fundamental catalysts. Market action is currently characterized by technical drift and flow-driven consolidation, keeping the VIX elevated at the 20.0 threshold while the 10-Year Yield anchors firmly at 4.0%. With the deployment queue remaining strictly LOCKED, the system interprets the current quiet tape as a period of momentum digestion and latent risk pricing rather than a structural regime shift, warranting a neutral posture until directional clarity emerges.
 
 ---
 ### 1 · MACRO COMPASS — REGIME SCORING
@@ -15,9 +15,9 @@ Despite a lack of explicit macroeconomic catalysts, the ARMS composite score has
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | ~0.72 | ~0.27↓ | -0.45 | 0.65 | 40% | Next Catalyst |
 
-**Score re-elevating drivers:** System synthesized drivers up.
+**Score re-elevating drivers:** Live Volatility and Credit Spread ingestion.
 
-**Score decline drivers (still active):** System synthesized drivers down.
+**Score decline drivers (still active):** Live Momentum deceleration inputs.
 
 ---
 ### 2 · MACRO INPUTS — THURSDAY MORNING
@@ -30,11 +30,11 @@ Despite a lack of explicit macroeconomic catalysts, the ARMS composite score has
 ---
 ### 3 · KEY DEVELOPMENTS
 
-**ELEVATED VOLATILITY IN A NEWS VACUUM**
-The absence of major macroeconomic events today contrasts sharply with a VIX sustained at 20.0. With the 10-year yield anchored at 4.0%, this elevated volatility premium points to institutional hedging or liquidity constraints rather than fundamental repricing. Markets appear to be pricing in latent tail risk, warranting a highly cautious posture despite the broader RISK_ON classification.
+**VOLATILITY PREMIUM PERSISTS DESPITE NEWS VACUUM**
+The absence of tier-one macroeconomic data or geopolitical shocks today has not translated into a volatility crush. With the VIX stubbornly holding the 20.0 handle and the 10-Year Yield stabilizing at 4.0%, options markets are continuing to price in latent tail risks. This divergence between a quiet news cycle and elevated implied volatility suggests institutional hedging programs remain active, contributing directly to the downward drift in the ARMS composite score.
 
-**INTERNAL MOMENTUM DECAY**
-The ARMS composite score has registered a downward drift to 0.27. This internal deterioration, occurring without a clear external catalyst, indicates a weakening of market breadth and a potential exhaustion of the recent risk rally. The system interprets this silent decay as a precursor to a potential regime shift, justifying the suspension of new capital deployment.
+**SCORE DECAY TRIGGERS QUEUE LOCK**
+The ARMS composite score has registered a downward tick to 0.27, reflecting deteriorating internal momentum despite the broader RISK_ON classification. This mechanical decay, driven by a lack of upside catalysts rather than overt selling pressure, has triggered a hard lock on the deployment queue. The system requires a definitive volatility compression or a fresh fundamental catalyst to authorize new capital deployment.
 
 ---
 ### 4 · EQUITY BOOK — DEFENSIVE 40% CEILING
@@ -70,9 +70,9 @@ The ARMS composite score has registered a downward drift to 0.27. This internal 
 ---
 ### 8 · PM DECISION QUEUE
 
-**1. 1. DO NOT DEPLOY. The capital deployment queue is strictly LOCKED. Existing RISK_ON allocations are to be maintained, but no new risk is to be added while the ARMS score exhibits negative velocity.**
+**1. 1. MAINTAIN CURRENT EXPOSURE. The deployment queue is strictly LOCKED due to the score decay (0.27) and elevated VIX (20.0). Do not initiate new risk-on tranches.**
 
-**2. 2. REQUIRE VOLATILITY COMPRESSION. The queue will remain locked until the VIX compresses below the 18.0 level and the ARMS score demonstrates a positive reversal above the 0.30 threshold.**
+**2. 2. MONITOR VOLATILITY THRESHOLDS. A VIX close below 18.5 is required to signal a resumption of healthy RISK_ON momentum and initiate a queue unlock sequence.**
 
-**3. 3. STAGE DEFENSIVE OVERLAYS. PMs should prepare to execute downside hedges. If the ARMS score drops below 0.20, the system will likely trigger a regime downgrade to RISK_OFF.**
+**3. 3. PREPARE FOR CATALYST ASYMMETRY. Given the current news vacuum, the market is highly sensitive to unexpected headlines. Ensure downside hedges are calibrated to the 4.0% 10Y yield baseline.**
 

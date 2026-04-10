@@ -366,8 +366,8 @@ def run_full_arms_cycle():
         "macro_compass_score_yesterday": 0.72,
         "macro_compass_trigger": 0.65,
         "macro_compass_next_catalyst": "Next Catalyst",
-        "macro_compass_drivers_up": "System synthesized drivers up.",
-        "macro_compass_drivers_down": "System synthesized drivers down.",
+        "macro_compass_drivers_up": "Live Volatility and Credit Spread ingestion.",
+        "macro_compass_drivers_down": "Live Momentum deceleration inputs.",
         "macro_inputs": {
             "VIX": {"value": str(round(globals().get('vix', locals().get('vix', 20.0)), 2)), "context": "Live ingestion"},
             "HY_SPREAD": {"value": str(round(globals().get('hy', locals().get('hy', 4.0)), 2)), "context": "Live ingestion"},

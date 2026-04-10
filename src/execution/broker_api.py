@@ -61,11 +61,9 @@ class IBKRBroker(Broker):
         )
 
     def _require_connection(self):
-        if getattr(self, '_simulated', False) or getattr(self, 'ib', None) is None:
-            # allow fallback to proceed
-            return
-            
-        if not self.is_connected or not self.ib:
+        if not IB_AVAILABLE:
+            return # Skip if simulating
+        if not self.is_connected or not getattr(self, 'ib', None):
             raise ConnectionError("Broker is not connected.")
 
     def _paper_guard(self):
@@ -125,16 +123,8 @@ class IBKRBroker(Broker):
         """Fetch current portfolio positions from the broker."""
         self._require_connection()
 
-        if not getattr(self, '_simulated', False) and (not getattr(self, 'ib', None)):
-            # In simulation fallback, provide dummy positions so the cycle can test logic
-            print("[IBKRBroker] SIMULATION: Returning mock portfolio state.")
-            from .interfaces import Position
-            return [
-                Position(ticker="NVDA", sec_type="STK", quantity=25000, average_cost=110.0, market_value=3100000.0, con_id=1),
-                Position(ticker="TSLA", sec_type="STK", quantity=18000, average_cost=180.0, market_value=3200000.0, con_id=2),
-                Position(ticker="QQQ", sec_type="OPT", quantity=50, average_cost=10.0, market_value=50000.0, con_id=123, expiry="2026-06-15", strike=400.0, right="P", multiplier=100.0),
-                Position(ticker="DBMF", sec_type="STK", quantity=60000, average_cost=25.0, market_value=1500000.0, con_id=3)
-            ]
+        if not IB_AVAILABLE or getattr(self, 'ib', None) is None:
+            raise RuntimeError("ib_insync backend unavailable or disconnected; refusing scaffold portfolio state in live cycle.")
 
         print("[IBKRBroker] Fetching live positions...")
 
@@ -190,9 +180,8 @@ class IBKRBroker(Broker):
         """Fetch current Net Asset Value from the broker."""
         self._require_connection()
 
-        if not getattr(self, '_simulated', False) and (not getattr(self, 'ib', None)):
-            print("[IBKRBroker] SIMULATION: Returning mock NAV.")
-            return 50_000_000.0
+        if not IB_AVAILABLE or getattr(self, 'ib', None) is None:
+            raise RuntimeError("ib_insync backend unavailable or disconnected; refusing scaffold NAV in live cycle.")
 
         print("[IBKRBroker] Fetching live NAV...")
         try:

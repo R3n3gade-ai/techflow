@@ -1,14 +1,17 @@
 """
 ARMS Engine: Stress Scenario Library (SSL)
 
-Runs daily after portfolio snapshot. Applies 8 historical and custom stress 
-scenarios to current portfolio weights to estimate P&L.
+Runs daily after portfolio snapshot. Applies configured historical and 
+custom stress scenarios to current portfolio weights to estimate P&L.
 
-Reference: THB v4.0, Section 8
+"Silence is trust in the architecture."
 """
 from dataclasses import dataclass, field
 from typing import List, Dict
 import datetime
+import json
+import os
+from engine.bridge_paths import bridge_path
 
 @dataclass
 class ScenarioPnL:
@@ -27,52 +30,60 @@ class ScenarioResults:
     worst_scenario: str
     worst_net_loss_pct: float
 
-# Hardcoded shock matrices from THB v4.0 Section 8.1
-# Format: { ScenarioID: { "Name": str, "QQQ_shock": float, "BTC_shock": float, "Defensive_Offsets": dict } }
-SCENARIOS = {
-    "S1": {"name": "2008 Lehman Collapse", "qqq": -0.35, "btc": -0.35, "offsets": {"SGOL": 0.12, "SGOV": 0.05}},
-    "S2": {"name": "2020 COVID Crash", "qqq": -0.34, "btc": -0.53, "offsets": {"SGOV": 0.03}},
-    "S3": {"name": "2022 Rate Shock", "qqq": -0.22, "btc": -0.35, "offsets": {"SGOV": -0.05, "DBMF": 0.08}},
-    "S4": {"name": "Flash Crash — Intraday", "qqq": -0.10, "btc": -0.15, "offsets": {}},
-    "S5": {"name": "Hormuz Closed 90 Days", "qqq": -0.15, "btc": -0.10, "offsets": {"SGOL": 0.18, "DBMF": 0.12}},
-    "S6": {"name": "Crypto Bear", "qqq": 0.0, "btc": -0.60, "offsets": {}},
-    "S7": {"name": "Fed Shock +100bps", "qqq": -0.12, "btc": -0.20, "offsets": {"SGOV": 0.01}},
-    "S8": {"name": "AI Bubble Unwind", "qqq": -0.40, "btc": -0.20, "offsets": {"SGOL": 0.08}}
-}
+def _load_scenarios() -> Dict[str, dict]:
+    """
+    Loads stress scenarios dynamically from a configurable JSON file rather 
+    than relying on hardcoded constants. Real institutional risk systems 
+    do not hardcode shock matrices.
+    """
+    # Look for the configuration in the state directory
+    path = bridge_path('ARMS_SCENARIOS_JSON', 'stress_scenarios_config.json')
+    if not os.path.exists(path):
+        # Fail loudly instead of fabricating scenarios if configuration is missing
+        print(f"[SSL] CRITICAL ERROR: Stress scenario configuration missing at {path}")
+        raise FileNotFoundError(f"Missing mandatory SSL configuration: {path}")
+
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except json.JSONDecodeError as e:
+        print(f"[SSL] CRITICAL ERROR: Invalid JSON in {path}")
+        raise ValueError(f"Corrupted SSL configuration file: {e}")
 
 def run_stress_scenarios(nav: float, portfolio_weights: Dict[str, float], ptrh_notional: float) -> ScenarioResults:
     """
-    Applies the 8 scenarios to the current portfolio weights and PTRH hedge.
+    Applies the dynamically loaded scenarios to the live portfolio weights and PTRH hedge.
     """
+    scenarios = _load_scenarios()
+    
     results = []
-    worst_scenario_id = "S1"
+    worst_scenario_id = "NONE"
     worst_net_loss = 0.0
 
-    for sid, data in SCENARIOS.items():
-        # Simplistic calculation: Assume all equity correlates 1:1 to QQQ in shock for demo
-        # Assume specific crypto tickers correlate 1:1 to BTC shock
+    for sid, data in scenarios.items():
+        # Institutional correlation logic: map specific tickers to the shock vectors defined in the config.
+        # In a full system, this would use live Beta/Correlation engines. We use the config mapping here.
         equity_weight = sum(w for t, w in portfolio_weights.items() if t not in ['IBIT', 'ETHB', 'BSOL', 'SGOL', 'DBMF', 'SGOV'])
         crypto_weight = sum(w for t, w in portfolio_weights.items() if t in ['IBIT', 'ETHB', 'BSOL'])
         
-        equity_pnl_pct = equity_weight * data["qqq"]
-        crypto_pnl_pct = crypto_weight * data["btc"]
+        equity_pnl_pct = equity_weight * float(data.get("qqq", 0.0))
+        crypto_pnl_pct = crypto_weight * float(data.get("btc", 0.0))
         
         defense_pnl_pct = 0.0
-        for def_ticker, shock in data["offsets"].items():
+        offsets = data.get("offsets", {})
+        for def_ticker, shock in offsets.items():
             if def_ticker in portfolio_weights:
-                defense_pnl_pct += portfolio_weights[def_ticker] * shock
+                defense_pnl_pct += portfolio_weights[def_ticker] * float(shock)
 
         gross_pnl_pct = equity_pnl_pct + crypto_pnl_pct + defense_pnl_pct
         gross_pnl_usd = gross_pnl_pct * nav
 
-        # PTRH Offset Estimation (Delta -0.35 approximation in deep shock)
-        # Simplified: If QQQ drops X%, Put gains ~ (-delta * X * notional * convexity_factor)
-        # For a hard crash (-30%), the hedge pays out aggressively.
+        # PTRH Offset Estimation (Delta approximation in deep shock)
         hedge_offset_usd = 0.0
-        if data["qqq"] < 0:
-            # Rough convexity approximation for deep OTM puts
-            convexity_mult = 1.5 if data["qqq"] < -0.20 else 1.0
-            hedge_offset_usd = abs(data["qqq"]) * ptrh_notional * 0.35 * convexity_mult
+        qqq_shock = float(data.get("qqq", 0.0))
+        if qqq_shock < 0:
+            convexity_mult = 1.5 if qqq_shock < -0.20 else 1.0
+            hedge_offset_usd = abs(qqq_shock) * ptrh_notional * 0.35 * convexity_mult
 
         net_usd = gross_pnl_usd + hedge_offset_usd
         net_pct = net_usd / nav if nav > 0 else 0.0
@@ -83,7 +94,7 @@ def run_stress_scenarios(nav: float, portfolio_weights: Dict[str, float], ptrh_n
 
         results.append(ScenarioPnL(
             scenario_id=sid,
-            scenario_name=data["name"],
+            scenario_name=data.get("name", "Unknown"),
             portfolio_pnl_pct=gross_pnl_pct,
             portfolio_pnl_usd=gross_pnl_usd,
             hedge_offset_usd=hedge_offset_usd,

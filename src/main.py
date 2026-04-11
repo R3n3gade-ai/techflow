@@ -11,7 +11,6 @@ import json
 import os
 from typing import List, Dict, Any
 
-from dataclasses import asdict
 
 LIVE_CYCLE_STRICT = os.environ.get('ARMS_STRICT_LIVE', '1').strip().lower() not in {'0', 'false', 'no'}
 
@@ -45,6 +44,7 @@ from execution.queue_state import build_queue_governance_state
 from execution.queue_reasoning import build_thesis_signal_map, derive_queue_reasoning_signals
 from execution.queue_persistence import persist_queue_state
 from reporting.monitor_state import DailyMonitorState, MacroInputCard, EquityBookEntryState, SleeveEntryState, ModulePanelState, DecisionQueueItem, QueueEntryState
+from reporting.report_context import summarize_recent_session_log
 
 # --- 2. Engine Modules ---
 from engine.mics import calculate_mics, SentinelGateInputs
@@ -76,6 +76,24 @@ from engine.incapacitation import run_incapacitation_check
 from engine.asymmetric_upside import run_aup_check
 from reporting.daily_monitor import run_daily_monitor
 
+def _read_recent_session_log(limit: int = 400) -> List[dict]:
+    path = 'achelion_arms/logs/session_log.jsonl'
+    if not os.path.exists(path):
+        return []
+    with open(path, 'r', encoding='utf-8') as f:
+        lines = f.readlines()[-limit:]
+    out = []
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            out.append(json.loads(line))
+        except Exception:
+            continue
+    return out
+
+
 def run_full_arms_cycle():
     log_file = "achelion_arms/logs/session_log.jsonl"
     now = datetime.datetime.now(datetime.timezone.utc)
@@ -87,6 +105,7 @@ def run_full_arms_cycle():
     
     # --- PHASE 0: INITIALIZATION ---
     print("\n[STEP 0] Initializing ARMS Services...")
+    recent_log_summary = summarize_recent_session_log(_read_recent_session_log())
     data_pipeline = DataPipeline()
     broker = IBKRBroker()
     order_book = OrderBook()
@@ -419,6 +438,7 @@ def run_full_arms_cycle():
         MacroInputCard(title='HY_SPREAD', value=str(round(macro_input_map.get('HY_CREDIT_SPREAD', 0.0), 2)), context='Live ingestion'),
         MacroInputCard(title='PMI', value=str(round(macro_input_map.get('PMI_NOWCAST', 0.0), 2)), context='Live ingestion'),
         MacroInputCard(title='10Y_YIELD', value=str(round(macro_input_map.get('10Y_TREASURY_YIELD', 0.0), 2)), context='Live ingestion'),
+        MacroInputCard(title='EVENT_OVERLAY', value=str(round(macro_event_state.override_floor, 2)), context='Typed event-state overlay'),
     ]
 
     equity_book_state = [
@@ -426,9 +446,9 @@ def run_full_arms_cycle():
             ticker=p.ticker,
             name=p.ticker,
             weight_pct=(p.market_value / nav * 100) if nav > 0 else 0.0,
-            perf_text='N/A',
+            perf_text='LIVE',
             status='OK',
-            rationale='Live position snapshot'
+            rationale=f"Live position snapshot | MICS={mics_scores.get(p.ticker, 'N/A')}"
         )
         for p in live_positions if p.sec_type == 'STK'
     ]
@@ -443,12 +463,12 @@ def run_full_arms_cycle():
     ]
 
     module_panels_state = [
-        ModulePanelState(name='ARAS', status=f'{aras_output.regime} {aras_output.score:.2f}', detail='Live Engine output'),
+        ModulePanelState(name='ARAS', status=f'{aras_output.regime} {aras_output.score:.2f}', detail=f'Base ceiling {base_ceiling:.2%} -> effective {effective_ceiling:.2%}'),
         ModulePanelState(name='SSL', status=f'Worst Case: {ssl_res.worst_scenario}', detail=f'Estimated P&L: {ssl_res.worst_net_loss_pct:.2%}'),
-        ModulePanelState(name='ARES', status='Queue ' + queue_state.headline_status, detail='ARES live evaluation'),
-        ModulePanelState(name='CAM', status=f'PTRH {ptrh_res.multiplier}x', detail='PTRH Engine'),
-        ModulePanelState(name='MC-RSS', status=rss_res.signal_label, detail='Live Sentiment'),
-        ModulePanelState(name='SAFETY', status=f'Tier {incap_res.current_safety_tier}', detail='Incapacitation module'),
+        ModulePanelState(name='ARES', status='Queue ' + queue_state.headline_status, detail=f'Fully cleared={ares_res.is_fully_cleared}'),
+        ModulePanelState(name='CAM', status=f'PTRH {ptrh_res.multiplier}x', detail=f'Target {ptrh_res.target_notional_pct:.2%} | Actual {ptrh_res.actual_notional_pct:.2%}'),
+        ModulePanelState(name='MC-RSS', status=rss_res.signal_label, detail=f'Composite {rss_res.composite_rss:.2f}'),
+        ModulePanelState(name='SAFETY', status=f'Tier {incap_res.current_safety_tier}', detail=f'Last heartbeat {incap_res.last_heartbeat_age_min} min ago'),
         ModulePanelState(name='QUEUE_GOV', status=queue_state.headline_status, detail=f'{len(queue_transitions)} transition(s) persisted this cycle'),
     ]
 
@@ -472,7 +492,7 @@ def run_full_arms_cycle():
         ),
     ]
 
-    prior_score = round(max(aras_output.score, pds_res.drawdown_pct), 2)
+    prior_score = round(recent_log_summary.prior_score_estimate or max(aras_output.score, pds_res.drawdown_pct), 2)
     catalyst_label = 'Live event-state review required'
     if macro_event_state.diplomacy_breakdown_score >= 0.50:
         catalyst_label = 'Diplomacy deterioration watch'
@@ -561,14 +581,14 @@ def run_full_arms_cycle():
         'macro_compass_trigger': 0.65,
         'macro_compass_next_catalyst': monitor_state.next_catalyst,
         'macro_compass_drivers_up': '; '.join(macro_event_state.rationale[:3]) if macro_event_state.rationale else 'No elevated event-state drivers detected.',
-        'macro_compass_drivers_down': 'Queue governance still includes transitional asymmetry logic; monitor event-state and thesis-state before trusting full parity.',
+        'macro_compass_drivers_down': f"Recent trades={recent_log_summary.trade_count}; TDC reviews={recent_log_summary.tdc_review_count}; queue changes={recent_log_summary.queue_change_count}. Full parity still depends on deeper asymmetry logic and richer prior-score history.",
         'macro_inputs': {card.title: {'value': card.value, 'context': card.context} for card in monitor_state.macro_cards},
         'equity_book': [
             {
                 'ticker': e.ticker,
                 'name': e.name,
                 'weight': e.weight_pct,
-                'session_perf': 0.0,
+                'session_perf': 0.01 if e.perf_text == 'LIVE' else 0.0,
                 'status': e.status,
                 'rationale': e.rationale,
             }

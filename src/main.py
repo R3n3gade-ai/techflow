@@ -43,6 +43,7 @@ from reporting.audit_log import SessionLogEntry, append_to_log
 from execution.order_request import OrderRequest
 from execution.queue_state import build_queue_governance_state
 from execution.queue_reasoning import build_thesis_signal_map, derive_queue_reasoning_signals
+from execution.queue_persistence import persist_queue_state
 from reporting.monitor_state import DailyMonitorState, MacroInputCard, EquityBookEntryState, SleeveEntryState, ModulePanelState, DecisionQueueItem, QueueEntryState
 
 # --- 2. Engine Modules ---
@@ -405,6 +406,7 @@ def run_full_arms_cycle():
         thesis_state_by_ticker=thesis_state_by_ticker,
         reasoning_signals=queue_reasoning,
     )
+    queue_transitions = persist_queue_state(queue_state)
     
     # --- PHASE 7: CONSOLIDATION & REPORTING ---
     print("\n[STEP 7] Generating Daily Monitor v4.0...")
@@ -444,11 +446,13 @@ def run_full_arms_cycle():
         ModulePanelState(name='CAM', status=f'PTRH {ptrh_res.multiplier}x', detail='PTRH Engine'),
         ModulePanelState(name='MC-RSS', status=rss_res.signal_label, detail='Live Sentiment'),
         ModulePanelState(name='SAFETY', status=f'Tier {incap_res.current_safety_tier}', detail='Incapacitation module'),
+        ModulePanelState(name='QUEUE_GOV', status=queue_state.headline_status, detail=f'{len(queue_transitions)} transition(s) persisted this cycle'),
     ]
 
     queue_counts_note = (
         f"Neutral={len(queue_state.neutral_queue)} | RiskOn={len(queue_state.risk_on_queue)} | "
-        f"Monitor={len(queue_state.monitor_list)} | Removed={len(queue_state.removed_items)}"
+        f"Monitor={len(queue_state.monitor_list)} | Removed={len(queue_state.removed_items)} | "
+        f"Transitions={len(queue_transitions)}"
     )
     decision_queue_state = [
         DecisionQueueItem(

@@ -1,3 +1,11 @@
+"""
+DEPRECATED TRANSITIONAL HTML VIEW MODEL — NOT AUTHORITATIVE RUNTIME TRUTH.
+
+This module was built around static MJ note/snapshot files and mock-era layout assumptions.
+Do not use it as the source of truth for live Daily Monitor generation.
+The active remediation path is the typed monitor state + markdown monitor flow.
+"""
+
 import datetime
 import json
 import os

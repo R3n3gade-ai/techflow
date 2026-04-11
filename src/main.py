@@ -11,6 +11,8 @@ import json
 import os
 from typing import List, Dict, Any
 
+from dataclasses import asdict
+
 LIVE_CYCLE_STRICT = os.environ.get('ARMS_STRICT_LIVE', '1').strip().lower() not in {'0', 'false', 'no'}
 
 
@@ -444,20 +446,42 @@ def run_full_arms_cycle():
         ModulePanelState(name='SAFETY', status=f'Tier {incap_res.current_safety_tier}', detail='Incapacitation module'),
     ]
 
+    queue_counts_note = (
+        f"Neutral={len(queue_state.neutral_queue)} | RiskOn={len(queue_state.risk_on_queue)} | "
+        f"Monitor={len(queue_state.monitor_list)} | Removed={len(queue_state.removed_items)}"
+    )
     decision_queue_state = [
-        DecisionQueueItem(title='Read runtime truth audit', body='Use the cold-truth remediation plan rather than historical completion claims.'),
-        DecisionQueueItem(title='Verify queue governance', body='Current queue state is transitional typed state and not yet canonical asymmetry logic.'),
-        DecisionQueueItem(title='Continue feed hardening', body='Critical live data path now fails loud under strict mode. Secondary deterministic sources still need to be formalized.'),
+        DecisionQueueItem(
+            title='Maintain queue discipline',
+            body=f"Queue headline is {queue_state.headline_status}. {queue_counts_note}. Do not front-run trigger logic outside system rules."
+        ),
+        DecisionQueueItem(
+            title='Review thesis pressure',
+            body=f"CDM alerts={len(cdm_alerts)} | TDC reviews={len(tdc_results)}. Any WATCH/IMPAIRED/BROKEN thesis state should govern queue posture before size increases."
+        ),
+        DecisionQueueItem(
+            title='Validate hedge and execution readiness',
+            body=f"PTRH last action={ptrh_res.last_action}. Order book batch size={len(executable_batch)}. Confirm no unresolved execution-quality issues before trusting autonomy claims."
+        ),
     ]
+
+    prior_score = round(max(aras_output.score, pds_res.drawdown_pct), 2)
+    catalyst_label = 'Live event-state review required'
+    if macro_event_state.diplomacy_breakdown_score >= 0.50:
+        catalyst_label = 'Diplomacy deterioration watch'
+    elif macro_event_state.diplomacy_breakdown_score > 0.0:
+        catalyst_label = 'Diplomacy / talks watch'
+    elif macro_event_state.oil_stress_score >= 0.40:
+        catalyst_label = 'Oil / shipping stress watch'
 
     monitor_state = DailyMonitorState(
         date_label=now.strftime('%B %d, %Y'),
         regime=aras_output.regime,
         score=round(aras_output.score, 2),
-        score_direction='↑' if regime_score > 0.72 else '↓',
-        score_prior=0.72,
+        score_direction='↑' if regime_score > prior_score else '↓',
+        score_prior=prior_score,
         queue_status=queue_state.headline_status,
-        next_catalyst='Next Catalyst',
+        next_catalyst=catalyst_label,
         equity_ceiling_pct=effective_ceiling,
         macro_cards=macro_cards_state,
         deployment_queue=[
@@ -529,8 +553,8 @@ def run_full_arms_cycle():
         'macro_compass_score_yesterday': monitor_state.score_prior or monitor_state.score,
         'macro_compass_trigger': 0.65,
         'macro_compass_next_catalyst': monitor_state.next_catalyst,
-        'macro_compass_drivers_up': 'Typed live macro cards and queue governance state.',
-        'macro_compass_drivers_down': 'Canonical event-state and asymmetry reasoning still under remediation.',
+        'macro_compass_drivers_up': '; '.join(macro_event_state.rationale[:3]) if macro_event_state.rationale else 'No elevated event-state drivers detected.',
+        'macro_compass_drivers_down': 'Queue governance still includes transitional asymmetry logic; monitor event-state and thesis-state before trusting full parity.',
         'macro_inputs': {card.title: {'value': card.value, 'context': card.context} for card in monitor_state.macro_cards},
         'equity_book': [
             {

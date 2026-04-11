@@ -1,3 +1,10 @@
+"""
+DEPRECATED TRANSITIONAL HTML RENDERER — NOT AUTHORITATIVE RUNTIME TRUTH.
+
+This renderer depends on the deprecated `daily_monitor_view.py` mock-oriented path.
+Retain only as a historical artifact until rebuilt on typed monitor state.
+"""
+
 from reporting.daily_monitor_view import DailyMonitorReportView
 
 def render_html_report(view: DailyMonitorReportView) -> str:

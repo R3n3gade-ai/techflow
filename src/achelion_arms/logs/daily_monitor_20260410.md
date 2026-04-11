@@ -1,19 +1,19 @@
-# ACHELION ARMS · Daily Monitor · April 10, 2026 · MOMENTUM DECAY IN QUIET TAPE · CONFIDENTIAL — GP Distribution 
-RISK_ON · Score ~0.27↓ · Queue LOCKED
+# ACHELION ARMS · Daily Monitor · April 10, 2026 · QUIET DECAY IN MOMENTUM · CONFIDENTIAL — GP Distribution 
+RISK_ON · Score ~0.26↓ · Queue LOCKED
 *Achelion Capital Management, LLC · Architecture AB v4.0 · Not for external distribution*
 
 ---
 **ACHELION ARMS — Daily Monitor**
 April 10, 2026 · Architecture AB v4.0
 
-Despite the overarching RISK_ON regime, the ARMS composite score has decayed to 0.27 amid a complete vacuum of fundamental catalysts. Market action is currently characterized by technical drift and flow-driven consolidation, keeping the VIX elevated at the 20.0 threshold while the 10-Year Yield anchors firmly at 4.0%. With the deployment queue remaining strictly LOCKED, the system interprets the current quiet tape as a period of momentum digestion and latent risk pricing rather than a structural regime shift, warranting a neutral posture until directional clarity emerges.
+Despite the absence of major macroeconomic catalysts, the ARMS composite score has experienced a structural decay, dropping to 0.26. The broader regime remains RISK_ON, but the deterioration in underlying momentum coupled with a sticky VIX at 20.0 suggests a fragile risk appetite. The 10-year yield holding firm at 4.0% provides a stable but restrictive backdrop. Given the lack of directional clarity and the downward trajectory of the score, the deployment queue remains strictly locked pending a stabilization in volatility or a definitive fundamental catalyst.
 
 ---
 ### 1 · MACRO COMPASS — REGIME SCORING
 
 | Yesterday's Low | Today's Score | Score Change | Queue Trigger | Equity Ceiling | Next Catalyst |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| ~0.72 | ~0.27↓ | -0.45 | 0.65 | 40% | Next Catalyst |
+| ~0.72 | ~0.26↓ | -0.46 | 0.65 | 40% | Next Catalyst |
 
 **Score re-elevating drivers:** Live Volatility and Credit Spread ingestion.
 
@@ -30,20 +30,18 @@ Despite the overarching RISK_ON regime, the ARMS composite score has decayed to 
 ---
 ### 3 · KEY DEVELOPMENTS
 
-**VOLATILITY PREMIUM PERSISTS DESPITE NEWS VACUUM**
-The absence of tier-one macroeconomic data or geopolitical shocks today has not translated into a volatility crush. With the VIX stubbornly holding the 20.0 handle and the 10-Year Yield stabilizing at 4.0%, options markets are continuing to price in latent tail risks. This divergence between a quiet news cycle and elevated implied volatility suggests institutional hedging programs remain active, contributing directly to the downward drift in the ARMS composite score.
+**VOLATILITY PREMIUM PERSISTS WITHOUT CATALYST**
+With the VIX hovering at the 20.0 threshold and the 10-year yield anchored at 4.0%, the market is pricing in a persistent risk premium despite a vacuum of headline news. This divergence between quiet fundamental flow and elevated implied volatility indicates underlying structural caution among institutional participants. The decay in the ARMS score to 0.26 reflects this internal market friction, signaling that current risk-on positioning is vulnerable to sudden liquidity shocks.
 
-**SCORE DECAY TRIGGERS QUEUE LOCK**
-The ARMS composite score has registered a downward tick to 0.27, reflecting deteriorating internal momentum despite the broader RISK_ON classification. This mechanical decay, driven by a lack of upside catalysts rather than overt selling pressure, has triggered a hard lock on the deployment queue. The system requires a definitive volatility compression or a fresh fundamental catalyst to authorize new capital deployment.
+**MOMENTUM DECAY DICTATES QUEUE LOCK**
+The downward drift in the ARMS composite score to 0.26, occurring in a news-light environment, points to exhaustion in the current risk-on leg. Without fresh capital inflows or supportive macro developments to sustain the rally, the system has preemptively locked the deployment queue. Capital preservation takes precedence until the score demonstrates a sustained reversal or crosses the threshold into a definitive risk-off posture.
 
 ---
 ### 4 · EQUITY BOOK — DEFENSIVE 40% CEILING
 
 | Ticker | Name | Wt. | Session | Status | Flag | Rationale |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| NVDA | NVDA | 6.2% | 0.0% | OK | OK | Live sizing |
-| TSLA | TSLA | 6.4% | 0.0% | OK | OK | Live sizing |
-| DBMF | DBMF | 3.0% | 0.0% | OK | OK | Live sizing |
+| AAPL | AAPL | 0.022574172237059476% | 0.0% | OK | OK | Live sizing |
 
 ---
 ### 5 · DEPLOYMENT QUEUE — LOCKED
@@ -54,25 +52,23 @@ The ARMS composite score has registered a downward tick to 0.27, reflecting dete
 ---
 ### 6 · DEFENSIVE SLEEVE + PTRH + CASH
 
-- **QQQ (0.1%):** Live Sizing
-- **DBMF (3.0%):** Live Sizing
 
 ---
 ### 7 · MODULE STATUS
 
-- **ARAS · RISK_ON 0.27**: Live Engine output
-- **SSL · Worst Case: S8**: Estimated P&L: -5.08%
+- **ARAS · RISK_ON 0.26**: Live Engine output
+- **SSL · Worst Case: S8**: Estimated P&L: -0.01%
 - **ARES · Queue LOCKED**: ARES live evaluation
-- **CAM · PTRH 1.2736285714285716x**: PTRH Engine
+- **CAM · PTRH 1.2603428571428572x**: PTRH Engine
 - **MC-RSS · NEUTRAL**: Live Sentiment
 - **SAFETY · Tier 0**: Incapacitation module
 
 ---
 ### 8 · PM DECISION QUEUE
 
-**1. 1. MAINTAIN CURRENT EXPOSURE. The deployment queue is strictly LOCKED due to the score decay (0.27) and elevated VIX (20.0). Do not initiate new risk-on tranches.**
+**1. 1. MAINTAIN QUEUE LOCK. Do not deploy fresh capital. The system requires the ARMS score to stabilize above 0.30 or a VIX compression below 18.0 before unlocking.**
 
-**2. 2. MONITOR VOLATILITY THRESHOLDS. A VIX close below 18.5 is required to signal a resumption of healthy RISK_ON momentum and initiate a queue unlock sequence.**
+**2. 2. MONITOR FOR REGIME SHIFT. With the score decaying to 0.26, prepare for a potential downgrade to NEUTRAL or RISK_OFF if the VIX breaks above 22.0.**
 
-**3. 3. PREPARE FOR CATALYST ASYMMETRY. Given the current news vacuum, the market is highly sensitive to unexpected headlines. Ensure downside hedges are calibrated to the 4.0% 10Y yield baseline.**
+**3. 3. REVIEW EXISTING EXPOSURE. Tighten trailing stops on high-beta assets, as the elevated volatility premium in a news-void environment leaves the book susceptible to sudden downside gaps.**
 

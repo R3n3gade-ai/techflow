@@ -30,6 +30,7 @@ class QueueItem:
     target: str
     execution_instruction: str
     status: str
+    notes: str = ''
 
 @dataclass
 class DefensiveSleeveItem:
@@ -60,6 +61,8 @@ class DailyMonitorV4:
     
     equity_book: List[EquityPosition]
     deployment_queue: List[QueueItem]
+    removed_queue_items: List[QueueItem]
+    monitor_list: List[QueueItem]
     defensive_sleeve: List[DefensiveSleeveItem]
     
     module_status: Dict[str, Dict[str, str]]
@@ -167,6 +170,20 @@ class DailyMonitorRenderer:
         for i, q in enumerate(monitor.deployment_queue):
             md += f"| {i+1} | {q.ticker} | {q.target} | {q.execution_instruction} | {q.status} |\n"
 
+        if monitor.removed_queue_items:
+            md += "\n**Removed / Downgraded Queue Items**\n\n"
+            md += "| Ticker | Target | Execution Instruction | Status | Notes |\n"
+            md += "| :--- | :--- | :--- | :--- | :--- |\n"
+            for q in monitor.removed_queue_items:
+                md += f"| {q.ticker} | {q.target} | {q.execution_instruction} | {q.status} | {q.notes} |\n"
+
+        if monitor.monitor_list:
+            md += "\n**Monitor List**\n\n"
+            md += "| Ticker | Target | Execution Instruction | Status | Notes |\n"
+            md += "| :--- | :--- | :--- | :--- | :--- |\n"
+            for q in monitor.monitor_list:
+                md += f"| {q.ticker} | {q.target} | {q.execution_instruction} | {q.status} | {q.notes} |\n"
+
         md += "\n---\n### 6 · DEFENSIVE SLEEVE + PTRH + CASH\n\n"
         for slv in monitor.defensive_sleeve:
             md += f"- **{slv.ticker} ({slv.weight}%):** {slv.rationale}\n"
@@ -203,6 +220,8 @@ def run_daily_monitor(raw_inputs: Dict[str, Any], market_context: str) -> str:
         macro_inputs=raw_inputs.get('macro_inputs', {}),
         equity_book=[EquityPosition(**eq) for eq in raw_inputs.get('equity_book', [])],
         deployment_queue=[QueueItem(**q) for q in raw_inputs.get('deployment_queue', [])],
+        removed_queue_items=[QueueItem(**q) for q in raw_inputs.get('removed_queue_items', [])],
+        monitor_list=[QueueItem(**q) for q in raw_inputs.get('monitor_list', [])],
         defensive_sleeve=[DefensiveSleeveItem(**s) for s in raw_inputs.get('defensive_sleeve', [])],
         module_status=raw_inputs.get('module_status', {})
     )

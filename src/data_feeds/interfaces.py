@@ -7,6 +7,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import List, Any, Literal
 
+VALID_COST_TIERS = ('FREE', 'LOW', 'INSTITUTIONAL', 'FREE_PROXY', 'FALLBACK')
+
 @dataclass
 class SignalRecord:
     """
@@ -21,7 +23,7 @@ class SignalRecord:
     raw_value: Any  # The original value before any normalization (e.g., 725.50)
     source: str  # The name of the feed plugin, e.g., 'FRED'
     timestamp: str  # ISO 8601 format string
-    cost_tier: Literal['FREE', 'LOW', 'INSTITUTIONAL']  # The cost tier of the data source
+    cost_tier: Literal['FREE', 'LOW', 'INSTITUTIONAL', 'FREE_PROXY', 'FALLBACK']  # Source provenance / fallback tier
 
 
 class FeedPlugin(ABC):

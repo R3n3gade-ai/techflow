@@ -1,4 +1,8 @@
 # ARMS Intelligence Status: UNIVERSAL LLM WRAPPER ACTIVE
+> **HISTORICAL IMPLEMENTATION NOTE — NOT AUTHORITATIVE RUNTIME TRUTH**
+>
+> This file contains statements from an earlier integration phase and should not be used as the present runtime truth.
+> In particular, any mention of graceful local fallback for live thesis work is superseded by strict fail-loud live-cycle requirements.
 
 - The `claude_wrapper.py` was completely refactored and renamed to `llm_wrapper.py`.
 - **Agnostic Architecture:** ARMS no longer assumes Anthropic is the sole provider. The wrapper natively supports Anthropic (Claude 3.5/Opus), Google (Gemini 2.5/3.1), and OpenAI (ChatGPT 4o/5.4).

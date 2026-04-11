@@ -21,6 +21,8 @@ from engine.cdm import CdmAlert
 from intelligence.llm_wrapper import llm_wrapper
 from execution.confirmation_queue import ConfirmationQueue, QueuedAction
 from reporting.audit_log import SessionLogEntry, append_to_log
+from engine.tdc_state import upsert_tdc_result
+from engine.sentinel_workflow import sentinel_workflow
 
 # --- Data Structures ---
 
@@ -57,30 +59,75 @@ class TDCStatus:
 
 # --- TDC Engine Logic ---
 
+def _load_live_sentinel_context(position: str) -> dict:
+    rec = sentinel_workflow._records.get(position.upper())
+    if not rec:
+        return {
+            'ticker': position.upper(),
+            'status': 'MISSING',
+            'gate1_pass': None,
+            'gate1_rationale': None,
+            'gate2_pass': None,
+            'gate2_rationale': None,
+            'gate3_raw_score': None,
+            'gate3_rationale': None,
+            'gate4_fem_impact': None,
+            'gate5_regime_at_entry': None,
+            'gate6_source_category': None,
+            'mics_score': None,
+            'mics_c_level': None,
+        }
+    return {
+        'ticker': rec.ticker,
+        'status': rec.status,
+        'gate1_pass': rec.gate1_pass,
+        'gate1_rationale': rec.gate1_rationale,
+        'gate2_pass': rec.gate2_pass,
+        'gate2_rationale': rec.gate2_rationale,
+        'gate3_raw_score': rec.gate3_raw_score,
+        'gate3_rationale': rec.gate3_rationale,
+        'gate4_fem_impact': rec.gate4_fem_impact,
+        'gate5_regime_at_entry': rec.gate5_regime_at_entry,
+        'gate6_source_category': rec.gate6_source_category,
+        'mics_score': rec.mics_score,
+        'mics_c_level': rec.mics_c_level,
+    }
+
+
 def run_thesis_review(alert: CdmAlert) -> ThesisReviewResult:
     """
     Runs a single thesis integrity review triggered by a CDM alert.
-    Consults the Claude API to evaluate the thesis integrity.
+    Uses the live stored SENTINEL thesis record rather than placeholder gate context.
     """
     position = alert.ticker
+    sentinel_context = _load_live_sentinel_context(position)
     
-    # 1. Retrieve original SENTINEL records (Placeholder: In a live system, this
-    #    would pull the actual gate records from a knowledge base or database.)
-    sentinel_gates = {
-        "gate1_thesis": "Civilizational shift — not a product cycle.",
-        "gate2_thesis": "Non-optional — cannot be routed around.",
-        "gate3_mispricing_score": 24, # Out of 30
-    }
-    
-    # 2. Construct the prompt for the Claude API (Section 2.3)
+    # 2. Construct the prompt using live SENTINEL thesis context
     prompt = f"""
-    You are running a thesis integrity review for position {position}.
-    ORIGINAL SENTINEL GATE RECORDS:
-    {json.dumps(sentinel_gates, indent=2)}
+    You are running an ARMS Thesis Dependency Checker review for position {position}.
+
+    ORIGINAL STORED SENTINEL THESIS RECORD:
+    {json.dumps(sentinel_context, indent=2)}
+
     CURRENT DEVELOPMENT:
-    Event Type: {alert.event_type}. Headline: {alert.headline}. Triggered by entity: {alert.triggering_entity}.
-    
-    Evaluate whether the original thesis remains intact.
+    Event Type: {alert.event_type}
+    Severity: {alert.severity}
+    Headline: {alert.headline}
+    Triggered by entity: {alert.triggering_entity}
+    Source: {alert.source_item.source if alert.source_item else 'UNKNOWN'}
+    Content: {alert.source_item.content if alert.source_item else ''}
+
+    Your job:
+    1. evaluate whether the original thesis remains INTACT, WATCH, IMPAIRED, or BROKEN
+    2. identify which SENTINEL gates are weakened by this new development
+    3. recommend the minimum governance response required
+
+    Scoring guidance:
+    - INTACT: thesis still stands with no meaningful degradation
+    - WATCH: thesis still stands but material uncertainty increased
+    - IMPAIRED: thesis weakened enough that queue progression / size-up should not proceed without review
+    - BROKEN: original thesis is no longer valid enough to remain an active candidate without retirement/removal
+
     Return ONLY valid JSON with this exact structure:
     {{
       "tis_score": <float 0.0-10.0>,
@@ -101,6 +148,11 @@ def run_thesis_review(alert: CdmAlert) -> ThesisReviewResult:
     )
     
     # 4. Parse the response and create the result object
+    if response_json.startswith("```json"):
+        response_json = response_json[7:-3].strip()
+    elif response_json.startswith("```"):
+        response_json = response_json[3:-3].strip()
+
     response_data = json.loads(response_json)
     
     result = ThesisReviewResult(
@@ -116,9 +168,24 @@ def run_thesis_review(alert: CdmAlert) -> ThesisReviewResult:
         action_type='TDC_REVIEW',
         triggering_module='TDC',
         triggering_signal=f"TIS: {result.tis_score} ({result.tis_label}) for {position}. Reason: {alert.event_type} at {alert.triggering_entity}.",
-        ticker=position
+        ticker=position,
+        gate3_score=sentinel_context.get('gate3_raw_score'),
+        source_category=sentinel_context.get('gate6_source_category')
     ))
     
+    upsert_tdc_result(
+        ticker=position,
+        tis_score=result.tis_score,
+        tis_label=result.tis_label,
+        recommended_action=result.recommended_action,
+        trigger_entity=result.trigger_entity,
+        trigger_type=result.trigger_type,
+        reviewed_at=result.reviewed_at,
+        bear_case_evidence=result.bear_case_evidence,
+        bull_case_rebuttal=result.bull_case_rebuttal,
+        last_event_type=alert.event_type,
+    )
+
     print(f"[TDC] Review Complete for {position}. TIS: {result.tis_score} ({result.tis_label})")
     
     # 6. Queue Tier 1 Actions if required (Section 2.2)

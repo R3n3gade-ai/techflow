@@ -1,9 +1,10 @@
 # src/execution/broker_api.py
-# IBKR broker adapter scaffold for ARMS paper-trading integration.
+# IBKR broker adapter for ARMS paper-trading integration.
 
 from __future__ import annotations
 
 import logging
+import math
 import os
 from typing import List, Literal, Optional, Tuple
 
@@ -14,7 +15,7 @@ try:
     IB_AVAILABLE = True
 except ImportError:
     IB_AVAILABLE = False
-    logging.warning("ib_insync not found. Broker API will run in degraded scaffold mode.")
+    logging.warning("ib_insync not found. Broker API unavailable for live cycle.")
 
 from .interfaces import Broker, Position
 from .order_request import OrderRequest
@@ -25,10 +26,10 @@ class IBKRBroker(Broker):
     Interactive Brokers adapter using ib_insync.
 
     Current state:
-    - Real connection established if ib_insync is available.
+    - Real paper connection required; no simulated connected-mode fallback.
     - Position snapshot implemented.
     - Order submission restricted to paper mode.
-    - Option contract resolution (e.g., PTRH puts) is mocked/pending.
+    - Order-status mapping partially implemented and under active hardening.
     """
 
     def __init__(
@@ -62,7 +63,7 @@ class IBKRBroker(Broker):
 
     def _require_connection(self):
         if not IB_AVAILABLE:
-            return # Skip if simulating
+            raise RuntimeError("ib_insync backend unavailable; live broker operations cannot proceed.")
         if not self.is_connected or not getattr(self, 'ib', None):
             raise ConnectionError("Broker is not connected.")
 
@@ -74,14 +75,11 @@ class IBKRBroker(Broker):
             )
 
     def connect(self):
-        global IB_AVAILABLE
         """Establish connection to IB Gateway / TWS."""
         self._paper_guard()
-        
+
         if not IB_AVAILABLE:
-            print("[IBKRBroker] ib_insync unavailable. Simulating connection success.")
-            self.is_connected = True
-            return
+            raise RuntimeError("ib_insync not installed; refusing live-cycle broker fallback.")
 
         print(
             f"[IBKRBroker] Connecting to IBKR at {self.host}:{self.port} "
@@ -91,24 +89,23 @@ class IBKRBroker(Broker):
         try:
             self.ib = ibi.IB()
             self.ib.connect(
-                self.host, 
-                self.port, 
-                clientId=self.client_id, 
+                self.host,
+                self.port,
+                clientId=self.client_id,
                 timeout=self.connect_timeout_s
             )
             self.is_connected = self.ib.isConnected()
-            
+
             if self.is_connected:
                 print(f"[IBKRBroker] Connected. Managed accounts: {self.ib.managedAccounts()}")
             else:
-                print("[IBKRBroker] Connection failed silently.")
-                
+                self.ib = None
+                raise RuntimeError("IBKR connection failed without exception; no live broker session established.")
+
         except Exception as e:
             self.is_connected = False
             self.ib = None
-            print(f"[IBKRBroker] Connection error: {e}. Falling back to simulation mode.")
-            IB_AVAILABLE = False # Force simulation
-            self.is_connected = True
+            raise RuntimeError(f"IBKR connection failed: {e}") from e
 
     def disconnect(self):
         if self.is_connected:
@@ -196,20 +193,42 @@ class IBKRBroker(Broker):
 
         raise RuntimeError("NetLiquidation USD value not returned by IBKR.")
 
+    def _resolve_equity_quantity_from_notional(self, ticker: str, contract: 'ibi.Contract', notional_usd: float) -> int:
+        qualified = self.ib.qualifyContracts(contract)
+        if not qualified:
+            raise RuntimeError(f"Could not qualify equity contract for {ticker}.")
+
+        ticker_snapshot = self.ib.reqTickers(qualified[0])[0]
+        market_price = ticker_snapshot.marketPrice()
+        close_price = ticker_snapshot.close
+
+        chosen_price = None
+        price_source = None
+        if market_price not in (None, 0, -1) and not math.isnan(market_price):
+            chosen_price = float(market_price)
+            price_source = 'marketPrice'
+        elif close_price not in (None, 0, -1) and not math.isnan(close_price):
+            chosen_price = float(close_price)
+            price_source = 'close'
+
+        if chosen_price is None or chosen_price <= 0:
+            raise RuntimeError(
+                f"No valid price source available for {ticker}; refusing notional conversion in live cycle."
+            )
+
+        print(f"[IBKRBroker] Using {price_source}={chosen_price:.4f} for notional conversion on {ticker}")
+        return max(1, int(round(float(notional_usd) / chosen_price)))
+
     def submit_order(self, order: OrderRequest) -> str:
         self._require_connection()
         self._paper_guard()
 
-        # Transitional validation.
         if order.tier == 1 and not order.confirmation_required:
             raise ValueError("Tier 1 orders must set confirmation_required=True.")
         if order.order_type == 'LIMIT' and order.limit_price is None:
-            # Just ignore for scaffold
-            pass
-            
+            raise ValueError("LIMIT orders require limit_price.")
         if not IB_AVAILABLE or not self.ib:
-            print(f"[IBKRBroker] Scaffold submit: {order}")
-            return f"paper_scaffold_{order.correlation_id}_{order.ticker.lower()}"
+            raise RuntimeError("ib_insync backend unavailable; refusing scaffold order submission.")
 
         print(f"[IBKRBroker] Preparing live paper order for {order.action} {order.quantity} {order.quantity_kind} {order.ticker}")
 
@@ -228,16 +247,7 @@ class IBKRBroker(Broker):
         if order.quantity_kind == 'NOTIONAL_USD':
             if order.action in {'BUY_PUT', 'SELL_PUT', 'SELL_CALL'}:
                 raise NotImplementedError("Option orders require contract quantity, not notional USD, before broker submission.")
-
-            qualified = self.ib.qualifyContracts(contract)
-            if not qualified:
-                raise RuntimeError(f"Could not qualify equity contract for {order.ticker}.")
-            ticker_snapshot = self.ib.reqTickers(qualified[0])[0]
-            market_price = ticker_snapshot.marketPrice()
-            import math
-            if market_price in (None, 0, -1) or math.isnan(market_price):
-                print(f"[IBKRBroker] Falling back to close price for {order.ticker}"); market_price = ticker_snapshot.close; broker_quantity = max(1, int(round(float(order.quantity) / float(market_price)))) if market_price and not math.isnan(market_price) else max(1, int(round(float(order.quantity) / 150.0))) if not (market_price in (None, 0, -1) or math.isnan(market_price)) else 1
-            broker_quantity = max(1, int(round(float(order.quantity) / float(market_price)))) if market_price and not math.isnan(market_price) else max(1, int(round(float(order.quantity) / 150.0)))
+            broker_quantity = self._resolve_equity_quantity_from_notional(order.ticker, contract, order.quantity)
         else:
             broker_quantity = float(order.quantity)
 
@@ -272,15 +282,30 @@ class IBKRBroker(Broker):
 
     def get_order_status(self, order_id: str) -> Literal['PENDING', 'FILLED', 'FAILED', 'CANCELLED']:
         self._require_connection()
-        
+
         if not IB_AVAILABLE or not self.ib:
-            print(f"[IBKRBroker] Status scaffold for order_id={order_id}")
-            return 'PENDING'
-            
+            raise RuntimeError("ib_insync backend unavailable; refusing scaffold status lookup.")
+
         print(f"[IBKRBroker] Checking status for {order_id}...")
-        # A full implementation searches self.ib.trades() and maps ib_insync status
-        # strings ('Submitted', 'Filled', 'Cancelled', 'Inactive') to our canonical literals.
-        return 'PENDING'
+        trades = self.ib.trades()
+        for trade in trades:
+            ib_order_id = getattr(trade.order, 'orderId', None)
+            candidate = f"ibkr_live_{ib_order_id}" if ib_order_id is not None else None
+            if candidate != order_id:
+                continue
+
+            status = (trade.orderStatus.status or '').lower()
+            if status in {'submitted', 'presubmitted', 'pendingsubmit', 'pendingcancel', 'apipending'}:
+                return 'PENDING'
+            if status in {'filled'}:
+                return 'FILLED'
+            if status in {'cancelled', 'pendingcancel'}:
+                return 'CANCELLED'
+            if status in {'inactive', 'apicancelled'}:
+                return 'FAILED'
+            return 'PENDING'
+
+        raise RuntimeError(f"Order id {order_id} not found in active IBKR trade list.")
 
     def get_options_chain(self, ticker: str, exchange: str = 'SMART') -> List['ibi.Option']:
         """

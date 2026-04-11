@@ -1,4 +1,8 @@
 # ARMS Engineering Status — 2026-04-07
+> **HISTORICAL ENGINEERING STATUS — NOT AUTHORITATIVE RUNTIME TRUTH**
+>
+> This document remains useful as a remediation log, but it is not the present-tense engineering truth.
+> For current runtime posture, use `docs/ARMS_RUNTIME_TRUTH_AUDIT_2026-04-10.md` and MJ's canonical architecture docs.
 
 ## Purpose
 This document is the current engineering truth for ARMS after the live-integrity remediation sprint. It supersedes ad hoc status impressions and is intended to answer three questions clearly:

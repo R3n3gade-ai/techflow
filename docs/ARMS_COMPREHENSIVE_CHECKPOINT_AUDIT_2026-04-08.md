@@ -1,4 +1,13 @@
 # ARMS Comprehensive Architecture & Codebase Audit
+> **HISTORICAL IMPLEMENTATION NOTE — NOT AUTHORITATIVE RUNTIME TRUTH**
+>
+> This document reflects an engineering checkpoint view from 2026-04-08.
+> It must not be treated as proof of current runtime parity with MJ's canonical architecture.
+> For current cold-truth status, use:
+> - `docs/ARMS_RUNTIME_TRUTH_AUDIT_2026-04-10.md`
+> - `docs/ARMS_CANONICAL_DOCUMENT_MAP_2026-04-10.md`
+> - MJ canonical architecture docs (FSD / THB / Addenda)
+
 **Date:** April 8, 2026
 **Status:** FULLY ALIGNED AND SECURED (Live Operations Checkpoint)
 **Operator:** Lead Engineer

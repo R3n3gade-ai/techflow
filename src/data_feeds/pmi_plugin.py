@@ -6,12 +6,15 @@ Fetches live S&P Global / ISM PMI macro data via public scraping if API
 is not available, fulfilling the FSD "Priority 1" requirement.
 """
 
+import os
 import requests
 import json
 import datetime
 from typing import List
 
 from data_feeds.interfaces import FeedPlugin, SignalRecord
+
+STRICT_LIVE_MODE = os.environ.get('ARMS_STRICT_LIVE', '1').strip().lower() not in {'0', 'false', 'no'}
 
 class PmiPlugin(FeedPlugin):
     @property
@@ -65,11 +68,11 @@ class PmiPlugin(FeedPlugin):
         except Exception as e:
             print(f"[{self.name} Plugin] Failed to fetch live PMI from FRED: {e}.")
             
-        # Truthful Fallback Strategy:
-        # If public scrapers are completely blocked by WAFs, we log it and provide the 
-        # last known institutional benchmark (e.g., ISM March 2026: 50.3) so the system doesn't crash,
-        # but we explicitly mark the signal tier as FALLBACK so the engine knows it's stale.
-        print(f"[{self.name} Plugin] Fallback to recent known baseline.")
+        if STRICT_LIVE_MODE:
+            raise RuntimeError(f"[{self.name} Plugin] PMI unavailable in strict live mode; refusing stale fallback.")
+
+        # Non-strict fallback mode only.
+        print(f"[{self.name} Plugin] Fallback to recent known baseline because strict live mode is disabled.")
         records.append(SignalRecord(
             ticker="MACRO",
             signal_type="PMI_NOWCAST",

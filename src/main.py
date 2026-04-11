@@ -30,17 +30,24 @@ from data_feeds.event_bridge import load_event_bridge
 from data_feeds.sec_edgar_feed import fetch_form4_events
 from data_feeds.news_rss_feed import fetch_public_rss_events
 from data_feeds.event_state import dedupe_news_items
+from data_feeds.macro_event_state import derive_macro_event_state
 from execution.broker_api import IBKRBroker
 from execution.order_book import OrderBook, LiquidityMode
+from execution.strategic_queue import StrategicQueueManager
 from execution.circuit_breaker import CircuitBreaker
 from modules.stress_scenarios import run_stress_scenarios
 from execution.confirmation_queue import ConfirmationQueue, QueuedAction
 from reporting.audit_log import SessionLogEntry, append_to_log
 from execution.order_request import OrderRequest
+from execution.queue_state import build_queue_governance_state
+from execution.queue_reasoning import build_thesis_signal_map, derive_queue_reasoning_signals
+from reporting.monitor_state import DailyMonitorState, MacroInputCard, EquityBookEntryState, SleeveEntryState, ModulePanelState, DecisionQueueItem, QueueEntryState
 
 # --- 2. Engine Modules ---
 from engine.mics import calculate_mics, SentinelGateInputs
 from engine.sentinel_bridge import build_mics_input_for_ticker
+from engine.sentinel_workflow import sentinel_workflow
+from engine.tdc_state import load_tdc_state
 from engine.cam import CamInputs, calculate_required_notional
 from engine.tail_hedge import run_ptrh_module, OptionsPosition
 from engine.dshp import run_dshp_check, DefensivePosition
@@ -82,6 +89,7 @@ def run_full_arms_cycle():
     order_book = OrderBook()
     circuit_breaker = CircuitBreaker()
     confirmation_queue = ConfirmationQueue()
+    strategic_queue = StrategicQueueManager(config_path='data/mj_strategic_queue.json')
     
     try:
         broker.connect()
@@ -123,7 +131,13 @@ def run_full_arms_cycle():
     # --- PHASE 2: MACRO & SENTIMENT (ARAS / RPE / RSS) ---
     print("\n[STEP 2] Calculating Regime & Sentiment...")
     # 2.0 Macro Compass & ARAS Sub-Modules
-    regime_score = calculate_macro_regime_score(signals)
+    preliminary_event_items = []
+    preliminary_event_items.extend(fetch_form4_events())
+    preliminary_event_items.extend(fetch_public_rss_events())
+    preliminary_event_items.extend(load_event_bridge())
+    preliminary_event_items = dedupe_news_items(preliminary_event_items)
+    macro_event_state = derive_macro_event_state(preliminary_event_items)
+    regime_score = calculate_macro_regime_score(signals, event_state=macro_event_state)
     
     from modules.deleveraging_risk import run_deleveraging_check
     from modules.margin_stress import run_margin_stress_check
@@ -295,11 +309,7 @@ def run_full_arms_cycle():
     
     # --- PHASE 5: THESIS INTEGRITY (CDM / TDC) ---
     print("\n[STEP 5] Running AI-Driven Thesis Audits...")
-    event_items = []
-    event_items.extend(fetch_form4_events())
-    event_items.extend(fetch_public_rss_events())
-    event_items.extend(load_event_bridge())
-    event_items = dedupe_news_items(event_items)
+    event_items = preliminary_event_items
     cdm_alerts = run_cdm_scan(event_items) if event_items else []
     tdc_results = []
     for alert in cdm_alerts:
@@ -367,45 +377,222 @@ def run_full_arms_cycle():
     # In a full live system, current leverage is retrieved from broker (e.g. gross exposure / net liq)
     # Using 1.0 proxy for simulation run
     slof_status = run_slof_manager(aup_res, current_leverage=1.0)
+
+    thesis_signal_map = build_thesis_signal_map(getattr(sentinel_workflow, '_records', {}))
+    thesis_state_by_ticker = {
+        ticker: {
+            'status': sig.thesis_status,
+            'gate3_score': str(sig.gate3_score) if sig.gate3_score is not None else '',
+            'source_category': sig.source_category,
+        }
+        for ticker, sig in thesis_signal_map.items()
+    }
+
+    queue_reasoning = derive_queue_reasoning_signals(
+        queue_tickers=[item.ticker for item in strategic_queue.items],
+        thesis_map=thesis_signal_map,
+        cdm_alerts=cdm_alerts,
+        tdc_state_by_ticker=load_tdc_state(),
+    )
+
+    queue_state = build_queue_governance_state(
+        strategic_items=strategic_queue.items,
+        current_score=regime_score,
+        current_regime=current_regime,
+        ares_fully_cleared=ares_res.is_fully_cleared,
+        thesis_state_by_ticker=thesis_state_by_ticker,
+        reasoning_signals=queue_reasoning,
+    )
     
     # --- PHASE 7: CONSOLIDATION & REPORTING ---
     print("\n[STEP 7] Generating Daily Monitor v4.0...")
-    raw_inputs = {
-        "date": now.strftime("%B %d, %Y"),
-        "regime": aras_output.regime,
-        "score": round(aras_output.score, 2),
-        "score_direction": "↑" if regime_score > 0.72 else "↓",
-        "queue_status": "LOCKED" if not ares_res.is_fully_cleared else "UNLOCKED",
-        "macro_compass_score_yesterday": 0.72,
-        "macro_compass_trigger": 0.65,
-        "macro_compass_next_catalyst": "Next Catalyst",
-        "macro_compass_drivers_up": "Live Volatility and Credit Spread ingestion.",
-        "macro_compass_drivers_down": "Live Momentum deceleration inputs.",
-        "macro_inputs": {
-            "VIX": {"value": str(round(globals().get('vix', locals().get('vix', 20.0)), 2)), "context": "Live ingestion"},
-            "HY_SPREAD": {"value": str(round(globals().get('hy', locals().get('hy', 4.0)), 2)), "context": "Live ingestion"},
-            "PMI": {"value": str(round(globals().get('pmi', locals().get('pmi', 50.0)), 2)), "context": "Live ingestion"},
-            "10Y_YIELD": {"value": str(round(globals().get('tn_yield', locals().get('tn_yield', 4.0)), 2)), "context": "Live ingestion"}
-        },
-        "equity_book": [{"ticker": p.ticker, "name": p.ticker, "weight": p.market_value / nav * 100 if nav > 0 else 0, "session_perf": 0.0, "status": "OK", "rationale": "Live sizing"} for p in live_positions if p.sec_type == "STK"],
-        "deployment_queue": [],
-        "defensive_sleeve": [{"ticker": p.ticker, "weight": p.market_value / nav * 100 if nav > 0 else 0, "rationale": "Live Sizing"} for p in live_positions if p.ticker in ["DBMF", "SGOV", "SGOL", "QQQ"]],
-        "module_status": {
-            "ARAS": {"status": f"{aras_output.regime} {aras_output.score:.2f}", "detail": "Live Engine output"},
-            "SSL": {"status": f"Worst Case: {ssl_res.worst_scenario}", "detail": f"Estimated P&L: {ssl_res.worst_net_loss_pct:.2%}"},
-            "ARES": {"status": "Queue " + ("UNLOCKED" if ares_res.is_fully_cleared else "LOCKED"), "detail": "ARES live evaluation"},
-            "CAM": {"status": f"PTRH {ptrh_res.multiplier}x", "detail": "PTRH Engine"},
-            "MC-RSS": {"status": rss_res.signal_label, "detail": "Live Sentiment"},
-            "SAFETY": {"status": f"Tier {incap_res.current_safety_tier}", "detail": "Incapacitation module"}
+
+    macro_cards_state = [
+        MacroInputCard(title='VIX', value=str(round(macro_input_map.get('VIX_INDEX', 0.0), 2)), context='Live ingestion'),
+        MacroInputCard(title='HY_SPREAD', value=str(round(macro_input_map.get('HY_CREDIT_SPREAD', 0.0), 2)), context='Live ingestion'),
+        MacroInputCard(title='PMI', value=str(round(macro_input_map.get('PMI_NOWCAST', 0.0), 2)), context='Live ingestion'),
+        MacroInputCard(title='10Y_YIELD', value=str(round(macro_input_map.get('10Y_TREASURY_YIELD', 0.0), 2)), context='Live ingestion'),
+    ]
+
+    equity_book_state = [
+        EquityBookEntryState(
+            ticker=p.ticker,
+            name=p.ticker,
+            weight_pct=(p.market_value / nav * 100) if nav > 0 else 0.0,
+            perf_text='N/A',
+            status='OK',
+            rationale='Live position snapshot'
+        )
+        for p in live_positions if p.sec_type == 'STK'
+    ]
+
+    defensive_sleeve_state = [
+        SleeveEntryState(
+            ticker=p.ticker,
+            weight_pct=(p.market_value / nav * 100) if nav > 0 else 0.0,
+            rationale='Live sleeve snapshot'
+        )
+        for p in live_positions if p.ticker in ['DBMF', 'SGOV', 'SGOL', 'STRC']
+    ]
+
+    module_panels_state = [
+        ModulePanelState(name='ARAS', status=f'{aras_output.regime} {aras_output.score:.2f}', detail='Live Engine output'),
+        ModulePanelState(name='SSL', status=f'Worst Case: {ssl_res.worst_scenario}', detail=f'Estimated P&L: {ssl_res.worst_net_loss_pct:.2%}'),
+        ModulePanelState(name='ARES', status='Queue ' + queue_state.headline_status, detail='ARES live evaluation'),
+        ModulePanelState(name='CAM', status=f'PTRH {ptrh_res.multiplier}x', detail='PTRH Engine'),
+        ModulePanelState(name='MC-RSS', status=rss_res.signal_label, detail='Live Sentiment'),
+        ModulePanelState(name='SAFETY', status=f'Tier {incap_res.current_safety_tier}', detail='Incapacitation module'),
+    ]
+
+    decision_queue_state = [
+        DecisionQueueItem(title='Read runtime truth audit', body='Use the cold-truth remediation plan rather than historical completion claims.'),
+        DecisionQueueItem(title='Verify queue governance', body='Current queue state is transitional typed state and not yet canonical asymmetry logic.'),
+        DecisionQueueItem(title='Continue feed hardening', body='Critical live data path now fails loud under strict mode. Secondary deterministic sources still need to be formalized.'),
+    ]
+
+    monitor_state = DailyMonitorState(
+        date_label=now.strftime('%B %d, %Y'),
+        regime=aras_output.regime,
+        score=round(aras_output.score, 2),
+        score_direction='↑' if regime_score > 0.72 else '↓',
+        score_prior=0.72,
+        queue_status=queue_state.headline_status,
+        next_catalyst='Next Catalyst',
+        equity_ceiling_pct=effective_ceiling,
+        macro_cards=macro_cards_state,
+        deployment_queue=[
+            QueueEntryState(
+                ticker=e.ticker,
+                target=(f'{e.target_weight_pct * 100:.1f}%' if e.target_weight_pct is not None else 'N/A'),
+                execution_instruction=e.execution_instruction,
+                state=e.state,
+                reason=e.reason,
+                trigger_rule=e.trigger_rule,
+                notes=e.notes,
+            )
+            for e in queue_state.neutral_queue
+        ],
+        risk_on_queue=[
+            QueueEntryState(
+                ticker=e.ticker,
+                target=(f'{e.target_weight_pct * 100:.1f}%' if e.target_weight_pct is not None else 'N/A'),
+                execution_instruction=e.execution_instruction,
+                state=e.state,
+                reason=e.reason,
+                trigger_rule=e.trigger_rule,
+                notes=e.notes,
+            )
+            for e in queue_state.risk_on_queue
+        ],
+        monitor_list=[
+            QueueEntryState(
+                ticker=e.ticker,
+                target=(f'{e.target_weight_pct * 100:.1f}%' if e.target_weight_pct is not None else 'N/A'),
+                execution_instruction=e.execution_instruction,
+                state=e.state,
+                reason=e.reason,
+                trigger_rule=e.trigger_rule,
+                notes=e.notes,
+            )
+            for e in queue_state.monitor_list
+        ],
+        removed_queue_items=[
+            QueueEntryState(
+                ticker=e.ticker,
+                target=(f'{e.target_weight_pct * 100:.1f}%' if e.target_weight_pct is not None else 'N/A'),
+                execution_instruction=e.execution_instruction,
+                state=e.state,
+                reason=e.reason,
+                trigger_rule=e.trigger_rule,
+                notes=e.notes,
+            )
+            for e in queue_state.removed_items
+        ],
+        equity_book=equity_book_state,
+        defensive_sleeve=defensive_sleeve_state,
+        module_panels=module_panels_state,
+        pm_decision_queue=decision_queue_state,
+        live_context={
+            'vix': str(macro_input_map.get('VIX_INDEX', 'N/A')),
+            'hy_spread': str(macro_input_map.get('HY_CREDIT_SPREAD', 'N/A')),
+            'pmi': str(macro_input_map.get('PMI_NOWCAST', 'N/A')),
+            'ten_yield': str(macro_input_map.get('10Y_TREASURY_YIELD', 'N/A')),
         }
+    )
+
+    raw_inputs = {
+        'date': monitor_state.date_label,
+        'regime': monitor_state.regime,
+        'score': monitor_state.score,
+        'score_direction': monitor_state.score_direction,
+        'queue_status': monitor_state.queue_status,
+        'macro_compass_score_yesterday': monitor_state.score_prior or monitor_state.score,
+        'macro_compass_trigger': 0.65,
+        'macro_compass_next_catalyst': monitor_state.next_catalyst,
+        'macro_compass_drivers_up': 'Typed live macro cards and queue governance state.',
+        'macro_compass_drivers_down': 'Canonical event-state and asymmetry reasoning still under remediation.',
+        'macro_inputs': {card.title: {'value': card.value, 'context': card.context} for card in monitor_state.macro_cards},
+        'equity_book': [
+            {
+                'ticker': e.ticker,
+                'name': e.name,
+                'weight': e.weight_pct,
+                'session_perf': 0.0,
+                'status': e.status,
+                'rationale': e.rationale,
+            }
+            for e in monitor_state.equity_book
+        ],
+        'deployment_queue': [
+            {
+                'ticker': q.ticker,
+                'target': q.target,
+                'execution_instruction': q.execution_instruction,
+                'status': f'{q.state} · {q.reason}',
+                'notes': q.notes,
+            }
+            for q in monitor_state.deployment_queue + monitor_state.risk_on_queue
+        ],
+        'removed_queue_items': [
+            {
+                'ticker': q.ticker,
+                'target': q.target,
+                'execution_instruction': q.execution_instruction,
+                'status': f'{q.state} · {q.reason}',
+                'notes': q.notes,
+            }
+            for q in monitor_state.removed_queue_items
+        ],
+        'monitor_list': [
+            {
+                'ticker': q.ticker,
+                'target': q.target,
+                'execution_instruction': q.execution_instruction,
+                'status': f'{q.state} · {q.reason}',
+                'notes': q.notes,
+            }
+            for q in monitor_state.monitor_list
+        ],
+        'defensive_sleeve': [
+            {
+                'ticker': s.ticker,
+                'weight': s.weight_pct,
+                'rationale': s.rationale,
+            }
+            for s in monitor_state.defensive_sleeve
+        ],
+        'module_status': {panel.name: {'status': panel.status, 'detail': panel.detail} for panel in monitor_state.module_panels},
     }
     
     # Compile live news events into market context for the LLM
     live_news_context = "\n".join([f"[{ev.event_type} - {ev.triggering_entity}]: {ev.headline}" for ev in event_items]) if event_items else "No major market events detected today."
     live_market_context = f"""
     System completed daily sweep.
-    Current VIX is {globals().get('vix', locals().get('vix', 20.0))}.
-    Current 10Y Yield is {globals().get('tn_yield', locals().get('tn_yield', 4.0))}.
+    Current VIX is {monitor_state.live_context.get('vix')}.
+    Current 10Y Yield is {monitor_state.live_context.get('ten_yield')}.
+    Current queue headline status is {monitor_state.queue_status}.
+    Neutral queue count: {len(monitor_state.deployment_queue)}.
+    Risk-on queue count: {len(monitor_state.risk_on_queue)}.
     Recent News Events shaping macro:
     {live_news_context}
     """

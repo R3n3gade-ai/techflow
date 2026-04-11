@@ -55,7 +55,7 @@ from engine.cam import CamInputs, calculate_required_notional
 from engine.tail_hedge import run_ptrh_module, OptionsPosition
 from engine.dshp import run_dshp_check, DefensivePosition
 from engine.cdm import run_cdm_scan, NewsItem
-from engine.tdc import run_thesis_review
+from engine.tdc import run_thesis_review, run_weekly_tdc_audit
 from engine.regime_probability import calculate_rpe
 from engine.ares import run_ares_check
 from engine.cdf import calculate_position_decay
@@ -317,6 +317,9 @@ def run_full_arms_cycle():
     tdc_results = []
     for alert in cdm_alerts:
         tdc_results.append(run_thesis_review(alert))
+
+    weekly_audit_results = run_weekly_tdc_audit([p.ticker for p in live_positions if p.sec_type == 'STK'])
+    tdc_results.extend(weekly_audit_results)
         
     # --- PHASE 6: MASTER ENGINE & REBALANCING ---
     print("\n[STEP 6] Rebalancing Equity Book...")

@@ -17,12 +17,13 @@ from dataclasses import dataclass, field
 from typing import List, Literal, Optional
 
 # --- Internal Imports ---
-from engine.cdm import CdmAlert
+from engine.cdm import CdmAlert, NewsItem
 from intelligence.llm_wrapper import llm_wrapper
 from execution.confirmation_queue import ConfirmationQueue, QueuedAction
 from reporting.audit_log import SessionLogEntry, append_to_log
 from engine.tdc_state import upsert_tdc_result
 from engine.sentinel_workflow import sentinel_workflow
+from data_feeds.sec_edgar_plugin import sec_edgar_plugin
 
 # --- Data Structures ---
 
@@ -196,15 +197,50 @@ def run_thesis_review(alert: CdmAlert) -> ThesisReviewResult:
 
     return result
 
-def run_weekly_tdc_audit(all_positions: List[str]):
+def _build_weekly_audit_alert(ticker: str) -> CdmAlert:
+    sec_context = sec_edgar_plugin.fetch_docs(ticker, max_filings=2, max_chars_per_doc=8000)
+    source_item = NewsItem(
+        source='TDC_WEEKLY_AUDIT',
+        headline=f'Weekly thesis audit for {ticker}',
+        content=sec_context,
+        timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        entities=[ticker],
+        event_type='UNKNOWN'
+    )
+    return CdmAlert(
+        ticker=ticker,
+        triggering_entity='WEEKLY_TDC_AUDIT',
+        event_type='UNKNOWN',
+        severity='LOW',
+        headline=f'Weekly thesis audit context compiled for {ticker}',
+        source_item=source_item
+    )
+
+
+def run_weekly_tdc_audit(all_positions: List[str]) -> List[ThesisReviewResult]:
     """
-    Runs the proactive weekly audit on all positions in the book.
-    (Placeholder: To be triggered every Monday at 6AM CT)
+    Runs the proactive weekly audit on all equity positions in the book.
+    This is the first durable implementation of the weekly audit path.
     """
     print("\n--- Running Proactive Weekly TDC Audit ---")
-    # This would loop through each position, gather the last 7 days of news/filings,
-    # and call run_thesis_review for each one.
-    pass
+    results: List[ThesisReviewResult] = []
+
+    unique_positions = sorted({p.upper() for p in all_positions if p and p.isalpha()})
+    for ticker in unique_positions:
+        alert = _build_weekly_audit_alert(ticker)
+        result = run_thesis_review(alert)
+        result.trigger_type = 'WEEKLY_AUDIT'
+        results.append(result)
+
+        append_to_log(SessionLogEntry(
+            timestamp=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            action_type='TDC_WEEKLY_AUDIT',
+            triggering_module='TDC',
+            triggering_signal=f"Weekly audit completed for {ticker}: {result.tis_label} ({result.tis_score})",
+            ticker=ticker,
+        ))
+
+    return results
 
 if __name__ == '__main__':
     print("ARMS TDC Module Active (Simulation Mode)")

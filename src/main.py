@@ -43,8 +43,9 @@ from execution.order_request import OrderRequest
 from execution.queue_state import build_queue_governance_state
 from execution.queue_reasoning import build_thesis_signal_map, derive_queue_reasoning_signals
 from execution.queue_persistence import persist_queue_state
-from reporting.monitor_state import DailyMonitorState, MacroInputCard, EquityBookEntryState, SleeveEntryState, ModulePanelState, DecisionQueueItem, QueueEntryState
+from reporting.monitor_state import DailyMonitorState, MacroInputCard, EquityBookEntryState, SleeveEntryState, ModulePanelState, DecisionQueueItem, QueueEntryState, WeeklyScorecardRow
 from reporting.report_context import summarize_recent_session_log
+from reporting.regime_history import RegimeHistoryEntry, append_regime_history, prior_score as prior_regime_score
 
 # --- 2. Engine Modules ---
 from engine.mics import calculate_mics, SentinelGateInputs
@@ -492,7 +493,6 @@ def run_full_arms_cycle():
         ),
     ]
 
-    prior_score = round(recent_log_summary.prior_score_estimate or max(aras_output.score, pds_res.drawdown_pct), 2)
     catalyst_label = 'Live event-state review required'
     if macro_event_state.diplomacy_breakdown_score >= 0.50:
         catalyst_label = 'Diplomacy deterioration watch'
@@ -501,12 +501,32 @@ def run_full_arms_cycle():
     elif macro_event_state.oil_stress_score >= 0.40:
         catalyst_label = 'Oil / shipping stress watch'
 
+    history_entries = append_regime_history(RegimeHistoryEntry(
+        timestamp=now.isoformat(),
+        score=round(aras_output.score, 2),
+        regime=aras_output.regime,
+        equity_ceiling_pct=effective_ceiling,
+        queue_status=queue_state.headline_status,
+        catalyst=catalyst_label,
+        note=f"Trades={recent_log_summary.trade_count}; TDC={recent_log_summary.tdc_review_count}; QueueChanges={recent_log_summary.queue_change_count}"
+    ))
+    prior_score = round(prior_regime_score(history_entries) or aras_output.score, 2)
+
     monitor_state = DailyMonitorState(
         date_label=now.strftime('%B %d, %Y'),
         regime=aras_output.regime,
         score=round(aras_output.score, 2),
         score_direction='↑' if regime_score > prior_score else '↓',
         score_prior=prior_score,
+        weekly_scorecard=[
+            WeeklyScorecardRow(
+                session_label=e.timestamp[:10],
+                market_summary=f"Queue {e.queue_status} · Catalyst {e.catalyst}",
+                score_estimate=e.score,
+                regime_note=e.regime,
+            )
+            for e in history_entries[-5:]
+        ],
         queue_status=queue_state.headline_status,
         next_catalyst=catalyst_label,
         equity_ceiling_pct=effective_ceiling,

@@ -135,7 +135,16 @@ class DailyMonitorRenderer:
 
 {monitor.executive_summary}
 
----
+"""
+        if getattr(monitor, 'weekly_scorecard', []):
+            md += "---\n### 0 · RECENT REGIME HISTORY\n\n"
+            md += "| Session | Summary | Score | Regime |\n"
+            md += "| :--- | :--- | :--- | :--- |\n"
+            for row in getattr(monitor, 'weekly_scorecard', []):
+                md += f"| {row.session_label} | {row.market_summary} | ~{row.score_estimate} | {row.regime_note} |\n"
+            md += "\n"
+
+        md += f"""---
 ### 1 · MACRO COMPASS — REGIME SCORING
 
 | Yesterday's Low | Today's Score | Score Change | Queue Trigger | Equity Ceiling | Next Catalyst |

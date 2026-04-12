@@ -1,3 +1,5 @@
+> **DUPLICATE** � Canonical version: ARMS_FSD_Master_Build_Document_v1.1.md
+
 ACHELION ARMS FSD — Master Build Document v1.1 | CONFIDENTIAL | Immediate-Build Frontiers Added
 Achelion Capital Management, LLC · Flow. Illumination. Discipline. Conviction. 1
 ACHELION CAPITAL MANAGEMENT, LLC

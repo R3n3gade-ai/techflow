@@ -27,7 +27,7 @@ class OrderRequest:
     ticker: str
     action: Literal['BUY', 'SELL', 'BUY_PUT', 'SELL_PUT', 'SELL_CALL']
     quantity: float
-    quantity_kind: Literal['SHARES', 'CONTRACTS', 'NOTIONAL_USD'] = 'SHARES'
+    quantity_kind: Literal['SHARES', 'CONTRACTS', 'NOTIONAL_USD', 'WEIGHT_PCT'] = 'SHARES'
 
     # Optional contract metadata for derivative execution / richer audit semantics
     con_id: Optional[int] = None

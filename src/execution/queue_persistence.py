@@ -7,11 +7,12 @@ from dataclasses import asdict, dataclass
 from typing import Dict, List
 
 from engine.bridge_paths import bridge_path
-from execution.queue_state import QueueGovernanceEntry, QueueGovernanceState
+from execution.queue_state import QueueGovernanceEntry, QueueGovernanceState, validate_transition
 from reporting.audit_log import SessionLogEntry, append_to_log
 
 
 QUEUE_STATE_PATH = bridge_path('ARMS_QUEUE_STATE_JSON', 'queue_governance_state.json')
+QUEUE_TRANSITION_LOG_PATH = bridge_path('ARMS_QUEUE_TRANSITION_LOG', 'queue_transition_log.jsonl')
 
 
 @dataclass
@@ -23,6 +24,7 @@ class QueueTransition:
     new_reason: str
     changed_at: str
     note: str
+    valid_transition: bool = True
 
 
 @dataclass
@@ -72,6 +74,8 @@ def diff_queue_state(previous: PersistedQueueSnapshot, current: QueueGovernanceS
         new_reason = new.reason if new else 'ABSENT'
 
         if old_state != new_state or old_reason != new_reason:
+            # Validate against state machine
+            is_valid = validate_transition(ticker, old_state, new_state)
             note = new.notes if new else 'Ticker removed from current queue snapshot.'
             transitions.append(QueueTransition(
                 ticker=ticker,
@@ -81,9 +85,36 @@ def diff_queue_state(previous: PersistedQueueSnapshot, current: QueueGovernanceS
                 new_reason=new_reason,
                 changed_at=now_iso,
                 note=note,
+                valid_transition=is_valid,
             ))
 
     return transitions
+
+
+def _append_transition_log(transitions: List[QueueTransition]) -> None:
+    """Append transitions to a persistent JSONL audit log (one JSON object per line)."""
+    if not transitions:
+        return
+    os.makedirs(os.path.dirname(QUEUE_TRANSITION_LOG_PATH), exist_ok=True)
+    with open(QUEUE_TRANSITION_LOG_PATH, 'a', encoding='utf-8') as f:
+        for tr in transitions:
+            f.write(json.dumps(asdict(tr)) + '\n')
+
+
+def load_transition_history(limit: int = 200) -> List[dict]:
+    """Load the most recent N transitions from the persistent log."""
+    if not os.path.exists(QUEUE_TRANSITION_LOG_PATH):
+        return []
+    entries = []
+    try:
+        with open(QUEUE_TRANSITION_LOG_PATH, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    entries.append(json.loads(line))
+    except Exception as e:
+        print(f"[QueuePersistence] Failed to load transition log: {e}")
+    return entries[-limit:]
 
 
 def persist_queue_state(state: QueueGovernanceState) -> List[QueueTransition]:
@@ -101,13 +132,21 @@ def persist_queue_state(state: QueueGovernanceState) -> List[QueueTransition]:
     with open(QUEUE_STATE_PATH, 'w', encoding='utf-8') as f:
         json.dump(payload, f, indent=2)
 
+    # Persistent JSONL audit trail (queryable history)
+    _append_transition_log(transitions)
+
     for tr in transitions:
+        validity_tag = '' if tr.valid_transition else ' [INVALID TRANSITION]'
         append_to_log(SessionLogEntry(
             timestamp=tr.changed_at,
             action_type='QUEUE_STATE_CHANGE',
             triggering_module='QUEUE_GOVERNANCE',
-            triggering_signal=f"{tr.ticker}: {tr.old_state}/{tr.old_reason} -> {tr.new_state}/{tr.new_reason}. {tr.note}",
+            triggering_signal=f"{tr.ticker}: {tr.old_state}/{tr.old_reason} -> {tr.new_state}/{tr.new_reason}.{validity_tag} {tr.note}",
             ticker=tr.ticker,
         ))
+
+    if transitions:
+        invalid_count = sum(1 for t in transitions if not t.valid_transition)
+        print(f"[QueuePersistence] {len(transitions)} transition(s) persisted, {invalid_count} invalid.")
 
     return transitions

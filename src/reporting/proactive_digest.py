@@ -43,19 +43,88 @@ class ProactiveIntelligenceDigest:
     def __init__(self, log_path: str = "achelion_arms/logs/session_log.jsonl"):
         self.log_path = log_path
 
-    def _get_monthly_stats(self) -> Dict[str, Any]:
+    def _get_monthly_stats(self, month: Optional[int] = None, year: Optional[int] = None) -> Dict[str, Any]:
         """
-        Aggregates data from the audit log for the current month.
-        Placeholder for actual log parsing logic.
+        Aggregates data from the audit log for the specified month.
+        Parses actual session log entries and counts by action type.
         """
-        return {
-            "regime_transitions": 2,
-            "total_trades": 14,
-            "sentinel_scans": 156,
-            "new_positions": 2,
-            "avg_mics_score": 7.4,
-            "pds_triggers": 0
+        now = datetime.datetime.now(datetime.timezone.utc)
+        target_month = month or now.month
+        target_year = year or now.year
+
+        entries = self._load_month_entries(target_month, target_year)
+
+        regime_transitions = 0
+        total_trades = 0
+        sentinel_scans = 0
+        new_positions = 0
+        mics_scores = []
+        pds_triggers = 0
+
+        trade_actions = {
+            'TRADE', 'PERM_OVERWRITE', 'PERM_EXECUTION',
+            'DSHP_HARVEST', 'DSHP_HARVEST_TIER0',
+            'TRP_RETIREMENT', 'TRP_RETIREMENT_TIER0',
+            'FEM_PAIRED_TRIM', 'ARAS_EXECUTION',
         }
+
+        for entry in entries:
+            action = entry.get('action_type', '')
+            if action == 'REGIME_CHANGE':
+                regime_transitions += 1
+            elif action in trade_actions:
+                total_trades += 1
+            elif action in ('SENTINEL_SCAN', 'SENTINEL_GATE3'):
+                sentinel_scans += 1
+            elif action in ('NEW_POSITION', 'AUP_ENTRY'):
+                new_positions += 1
+            elif action == 'PDS_TRIGGER':
+                pds_triggers += 1
+
+            mics = entry.get('mics_score')
+            if mics is not None:
+                try:
+                    mics_scores.append(float(mics))
+                except (ValueError, TypeError):
+                    pass
+
+        avg_mics = sum(mics_scores) / len(mics_scores) if mics_scores else 0.0
+
+        return {
+            "regime_transitions": regime_transitions,
+            "total_trades": total_trades,
+            "sentinel_scans": sentinel_scans,
+            "new_positions": new_positions,
+            "avg_mics_score": round(avg_mics, 2),
+            "pds_triggers": pds_triggers,
+            "entries_analyzed": len(entries),
+        }
+
+    def _load_month_entries(self, month: int, year: int) -> List[dict]:
+        """Load session log entries for a specific month."""
+        import os
+        entries = []
+        if not os.path.exists(self.log_path):
+            return entries
+        with open(self.log_path, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                ts = entry.get('timestamp', '')
+                if not ts:
+                    continue
+                try:
+                    dt = datetime.datetime.fromisoformat(ts)
+                    if dt.month == month and dt.year == year:
+                        entries.append(entry)
+                except (ValueError, TypeError):
+                    continue
+        return entries
 
     def generate_monthly_report(self, month: str, year: int) -> LPReport:
         """
@@ -63,7 +132,14 @@ class ProactiveIntelligenceDigest:
         """
         print(f"[PID] Generating Proactive Intelligence Digest for {month} {year}...")
         
-        stats = self._get_monthly_stats()
+        # Convert month name to number for log filtering
+        month_names = {
+            'January': 1, 'February': 2, 'March': 3, 'April': 4,
+            'May': 5, 'June': 6, 'July': 7, 'August': 8,
+            'September': 9, 'October': 10, 'November': 11, 'December': 12,
+        }
+        month_num = month_names.get(month)
+        stats = self._get_monthly_stats(month=month_num, year=year)
         
         # 1. Construct the Narrative Prompt for Claude
         prompt = f"""

@@ -172,7 +172,7 @@ def _resolve_delta_primary_strike(broker: Broker, ticker: str, target_delta: flo
 
             # Narrow to strikes roughly near ATM to deep OTM
             narrowed = [c for c in valid_expiries if spot_price * 0.80 <= float(c.strike) <= spot_price * 1.05]
-            tickers = broker.get_market_data(narrowed)
+            tickers = broker.get_market_data(narrowed, require_greeks=True)
             
             for t in tickers:
                 if not t.modelGreeks or not t.modelGreeks.delta:

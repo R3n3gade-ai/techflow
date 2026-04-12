@@ -3,6 +3,7 @@ import os
 import datetime
 import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.dirname(__file__))
 
 from src.reporting.daily_monitor import run_daily_monitor
 
@@ -10,10 +11,32 @@ def load_json(filepath):
     with open(filepath, 'r') as f:
         return json.load(f)
 
+def _load_optional_json(filepath):
+    if not os.path.exists(filepath):
+        return {}
+    try:
+        with open(filepath, 'r') as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
 def run():
     print("Loading organic data from state files...")
     snapshot = load_json('data/mj_portfolio_snapshot.json')
     pm_notes = load_json('data/mj_pm_notes.json')
+
+    # Pull live persisted state when available
+    regime_history = _load_optional_json('state/regime_history.json')
+    queue_gov = _load_optional_json('state/queue_governance_state.json')
+
+    # Derive score from most recent regime history entry, fall back to snapshot
+    last_entry = regime_history[-1] if isinstance(regime_history, list) and regime_history else {}
+    prior_entry = regime_history[-2] if isinstance(regime_history, list) and len(regime_history) >= 2 else {}
+    current_score = last_entry.get('score', 0.72)
+    prior_score = prior_entry.get('score', current_score)
+    current_regime = last_entry.get('regime', 'WATCH')
+    queue_status = queue_gov.get('headline_status', 'UNKNOWN')
+    catalyst = last_entry.get('catalyst', 'Live event-state review required')
     
     equity_book = []
     for ticker, info in snapshot.get('equities', {}).items():
@@ -21,7 +44,7 @@ def run():
             'ticker': ticker,
             'name': ticker,
             'weight': info.get('weight', 0.0),
-            'session_perf': 0.0,
+            'session_perf': 0.0,  # unrealized return; true session PnL requires prior-close tracking
             'status': info.get('status', 'OK'),
             'rationale': info.get('flag', '')
         })
@@ -36,12 +59,12 @@ def run():
         
     raw_inputs = {
         'nav': snapshot.get('nav', 0.0),
-        'score': 0.72,
-        'score_direction': '↓',
-        'queue_status': 'WATCH',
-        'macro_compass_score_yesterday': 0.85,
+        'score': current_score,
+        'score_direction': '↑' if current_score >= prior_score else '↓',
+        'queue_status': queue_status,
+        'macro_compass_score_yesterday': prior_score,
         'macro_compass_trigger': 0.65,
-        'macro_compass_next_catalyst': 'Islamabad talks Friday',
+        'macro_compass_next_catalyst': catalyst,
         'macro_compass_drivers_up': 'Geopolitical resolution, Rate cut bets',
         'macro_compass_drivers_down': 'Temporary ceasefire expiry risk',
         'macro_inputs': {

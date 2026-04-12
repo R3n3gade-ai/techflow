@@ -220,8 +220,17 @@ def _build_weekly_audit_alert(ticker: str) -> CdmAlert:
 def run_weekly_tdc_audit(all_positions: List[str]) -> List[ThesisReviewResult]:
     """
     Runs the proactive weekly audit on all equity positions in the book.
-    This is the first durable implementation of the weekly audit path.
+    Gated to run only on the configured audit day (default: Sunday) to avoid
+    burning LLM credits on every daily cycle.
     """
+    import os
+    audit_day = int(os.environ.get('TDC_WEEKLY_AUDIT_DAY', '6'))  # 0=Mon ... 6=Sun
+    today_weekday = datetime.datetime.now(datetime.timezone.utc).weekday()
+    if today_weekday != audit_day:
+        day_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+        print(f"[TDC] Weekly audit skipped — runs on {day_names[audit_day]}s (today is {day_names[today_weekday]}).")
+        return []
+
     print("\n--- Running Proactive Weekly TDC Audit ---")
     results: List[ThesisReviewResult] = []
 

@@ -75,6 +75,10 @@ class SentinelWorkflowManager:
                 "records": [asdict(r) for r in self._records.values()]
             }, f, indent=4)
 
+    def get_all_records(self) -> Dict[str, 'SentinelThesisRecord']:
+        """Public accessor for thesis records (used by queue_reasoning)."""
+        return dict(self._records)
+
     def get_active_thesis(self, ticker: str) -> Optional[SentinelThesisRecord]:
         rec = self._records.get(ticker.upper())
         if rec and rec.status == 'ACTIVE':

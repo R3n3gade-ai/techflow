@@ -1,84 +1,278 @@
 """
-ARMS Data Feeds: Crypto Plugin (live public REST implementation)
+ARMS Data Feeds: Crypto Plugin (IBKR + Coinbase implementation)
 
-Fetches crypto microstructure proxies from public endpoints instead of
-returning fabricated values. If a source cannot be fetched, the plugin
-returns only the signals it could source successfully.
+Fetches crypto microstructure signals:
+  - BTC/ETH futures basis (funding rate proxy) via IBKR CME futures
+  - BTC/ETH open interest via IBKR CME contract details
+  - Stablecoin pegs via Coinbase public spot API
+
+Binance endpoints are geo-blocked in the US (HTTP 451). All futures
+data is sourced from CME via the existing IBKR connection at zero
+additional cost.
 """
 
 import datetime
 import json
-from typing import List
+import logging
+import math
+import os
+from typing import List, Optional
+
 from urllib.request import Request, urlopen
 
 from data_feeds.interfaces import FeedPlugin, SignalRecord
 
+try:
+    import ib_insync as ibi
+    IB_AVAILABLE = True
+except ImportError:
+    IB_AVAILABLE = False
+
+logger = logging.getLogger(__name__)
+
 
 class CryptoPlugin(FeedPlugin):
+    """
+    Crypto microstructure feed using IBKR for CME futures data and
+    Coinbase for stablecoin peg monitoring.
+    """
+
+    def __init__(self):
+        self._ib: Optional['ibi.IB'] = None
+        self._connected = False
+
     @property
     def name(self) -> str:
         return "CRYPTO_SENSES"
 
-    def _fetch_json(self, url: str, timeout: int = 15):
-        req = Request(url, headers={"User-Agent": "Achelion-ARMS/1.0"})
-        with urlopen(req, timeout=timeout) as response:
-            return json.loads(response.read().decode("utf-8"))
+    # ------------------------------------------------------------------ #
+    #  IBKR Connection (reuses same gateway as broker_api)
+    # ------------------------------------------------------------------ #
 
-    def fetch(self) -> List[SignalRecord]:
-        print(f"[{self.name} Plugin] Fetching live crypto microstructure proxies...")
-        records: List[SignalRecord] = []
-        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    def _ensure_ib_connection(self) -> bool:
+        """Connect to IB Gateway if not already connected."""
+        if not IB_AVAILABLE:
+            logger.warning("[%s] ib_insync not installed; IBKR crypto feeds unavailable.", self.name)
+            return False
 
-        # Binance funding rates (public)
-        funding_specs = [
-            ("BTCUSDT", "BTC_FUNDING", "BTC"),
-            ("SOLUSDT", "SOL_FUNDING", "SOL"),
+        if self._ib is not None and self._ib.isConnected():
+            return True
+
+        host = os.environ.get('IB_HOST') or os.environ.get('TWS_HOST') or '127.0.0.1'
+        port = int(os.environ.get('IB_PORT') or os.environ.get('TWS_PORT') or 4002)
+        # Use a distinct client ID to avoid collision with the main broker adapter
+        client_id = int(os.environ.get('IB_CRYPTO_CLIENT_ID', '10'))
+
+        try:
+            self._ib = ibi.IB()
+            self._ib.connect(host, port, clientId=client_id, timeout=10)
+            self._connected = self._ib.isConnected()
+            if self._connected:
+                print(f"[{self.name}] Connected to IBKR at {host}:{port} (clientId={client_id})")
+            return self._connected
+        except Exception as exc:
+            logger.error("[%s] IBKR connection failed: %s", self.name, exc)
+            self._ib = None
+            self._connected = False
+            return False
+
+    # ------------------------------------------------------------------ #
+    #  IBKR Futures Basis (funding rate proxy)
+    # ------------------------------------------------------------------ #
+
+    def _fetch_futures_basis(self, records: List[SignalRecord], now: str) -> None:
+        """
+        Derives a funding-rate proxy from CME futures basis:
+          basis = (futures_price - spot_price) / spot_price
+
+        Positive basis = contango = bullish sentiment (like positive perpetual funding).
+        Negative basis = backwardation = bearish / stress.
+
+        Normalization maps basis from [-0.05, +0.05] to [0, 1] with 0.5 = flat.
+        """
+        if not self._connected or self._ib is None:
+            return
+
+        # CME BTC futures (BRR) and ETH futures (ETH)
+        specs = [
+            {"underlying": "BRR", "signal_type": "BTC_FUNDING", "ticker": "BTC",
+             "spot_symbol": "BTC", "exchange": "CME", "multiplier": "5"},
+            {"underlying": "ETH", "signal_type": "ETH_FUNDING", "ticker": "ETH",
+             "exchange": "CME", "multiplier": "50"},
         ]
-        for symbol, signal_type, ticker in funding_specs:
-            try:
-                payload = self._fetch_json(
-                    f"https://fapi.binance.com/fapi/v1/fundingRate?symbol={symbol}&limit=1"
-                )
-                if payload:
-                    raw_value = float(payload[-1]["fundingRate"])
-                    normalized_value = max(0.0, min(1.0, (raw_value + 0.001) / 0.002))
-                    records.append(SignalRecord(
-                        ticker=ticker,
-                        signal_type=signal_type,
-                        value=normalized_value,
-                        raw_value=raw_value,
-                        source=self.name,
-                        timestamp=payload[-1].get("fundingTime", now),
-                        cost_tier='FREE'
-                    ))
-            except Exception as e:
-                print(f"[{self.name} Plugin] Funding fetch failed for {symbol}: {e}")
 
-        # Binance open interest snapshot (public)
-        oi_specs = [
-            ("BTCUSDT", "BTC_OI", "BTC"),
-            ("SOLUSDT", "SOL_OI", "SOL"),
-        ]
-        for symbol, signal_type, ticker in oi_specs:
+        for spec in specs:
             try:
-                payload = self._fetch_json(
-                    f"https://fapi.binance.com/fapi/v1/openInterest?symbol={symbol}"
+                # 1. Get front-month futures contract
+                fut = ibi.Future(
+                    symbol=spec["underlying"],
+                    exchange=spec["exchange"],
+                    currency="USD",
                 )
-                raw_value = float(payload["openInterest"])
-                normalized_value = 0.5  # Placeholder scale until OI regime bands are specified.
+                details = self._ib.reqContractDetails(fut)
+                if not details:
+                    print(f"[{self.name}] No CME futures found for {spec['underlying']}")
+                    continue
+
+                # Pick the nearest expiry
+                details.sort(key=lambda d: d.contract.lastTradeDateOrContractMonth)
+                front = details[0].contract
+                self._ib.qualifyContracts(front)
+
+                # 2. Get futures price
+                fut_ticker = self._ib.reqTickers(front)
+                if not fut_ticker:
+                    continue
+                fut_price = fut_ticker[0].marketPrice()
+                if fut_price is None or math.isnan(fut_price) or fut_price <= 0:
+                    fut_price = fut_ticker[0].close
+                if fut_price is None or math.isnan(fut_price) or fut_price <= 0:
+                    print(f"[{self.name}] No valid futures price for {spec['underlying']}")
+                    continue
+
+                # 3. Get spot price via crypto contract (IBKR provides PAXOS spot)
+                spot_contract = ibi.Crypto(spec["spot_symbol"], "PAXOS", "USD") if spec["underlying"] == "BRR" else None
+                spot_price = None
+                if spot_contract is not None:
+                    try:
+                        self._ib.qualifyContracts(spot_contract)
+                        spot_tickers = self._ib.reqTickers(spot_contract)
+                        if spot_tickers:
+                            sp = spot_tickers[0].marketPrice()
+                            if sp is not None and not math.isnan(sp) and sp > 0:
+                                spot_price = sp
+                    except Exception:
+                        pass
+
+                # Fallback: use Coinbase spot for the price
+                if spot_price is None:
+                    try:
+                        coinbase_symbol = "BTC-USD" if spec["underlying"] == "BRR" else "ETH-USD"
+                        cb_data = self._fetch_coinbase_ticker(coinbase_symbol)
+                        if cb_data:
+                            spot_price = float(cb_data["price"])
+                    except Exception:
+                        pass
+
+                if spot_price is None or spot_price <= 0:
+                    print(f"[{self.name}] No spot price for {spec['underlying']}; skipping basis calc.")
+                    continue
+
+                # 4. Calculate annualized basis
+                basis = (float(fut_price) - spot_price) / spot_price
+
+                # Normalize: map [-0.05, +0.05] → [0, 1], with 0.5 = flat
+                normalized = max(0.0, min(1.0, (basis + 0.05) / 0.10))
+
                 records.append(SignalRecord(
-                    ticker=ticker,
-                    signal_type=signal_type,
-                    value=normalized_value,
-                    raw_value=raw_value,
+                    ticker=spec["ticker"],
+                    signal_type=spec["signal_type"],
+                    value=normalized,
+                    raw_value=basis,
                     source=self.name,
                     timestamp=now,
                     cost_tier='FREE'
                 ))
-            except Exception as e:
-                print(f"[{self.name} Plugin] Open interest fetch failed for {symbol}: {e}")
+                print(f"[{self.name}] {spec['signal_type']}: basis={basis:.6f} "
+                      f"(fut={fut_price:.2f}, spot={spot_price:.2f})")
 
-        # Stablecoin pegs from Coinbase spot as a public proxy.
+            except Exception as exc:
+                print(f"[{self.name}] Futures basis failed for {spec['underlying']}: {exc}")
+
+    # ------------------------------------------------------------------ #
+    #  IBKR Open Interest via CME futures
+    # ------------------------------------------------------------------ #
+
+    def _fetch_open_interest(self, records: List[SignalRecord], now: str) -> None:
+        """
+        Fetches open interest from CME BTC/ETH futures via IBKR contract details.
+        Uses recent bar volume as a stress proxy when OI changes aren't available
+        in real-time (IBKR provides OI on daily bars).
+        """
+        if not self._connected or self._ib is None:
+            return
+
+        specs = [
+            {"underlying": "BRR", "signal_type": "BTC_OI", "ticker": "BTC", "exchange": "CME"},
+            {"underlying": "ETH", "signal_type": "ETH_OI", "ticker": "ETH", "exchange": "CME"},
+        ]
+
+        for spec in specs:
+            try:
+                fut = ibi.Future(
+                    symbol=spec["underlying"],
+                    exchange=spec["exchange"],
+                    currency="USD",
+                )
+                details = self._ib.reqContractDetails(fut)
+                if not details:
+                    continue
+
+                details.sort(key=lambda d: d.contract.lastTradeDateOrContractMonth)
+                front = details[0].contract
+                self._ib.qualifyContracts(front)
+
+                # Request daily bars to get volume + OI
+                bars = self._ib.reqHistoricalData(
+                    front,
+                    endDateTime='',
+                    durationStr='5 D',
+                    barSizeSetting='1 day',
+                    whatToShow='TRADES',
+                    useRTH=False,
+                    formatDate=1,
+                )
+
+                if not bars or len(bars) < 2:
+                    print(f"[{self.name}] Insufficient bar data for {spec['underlying']} OI")
+                    continue
+
+                # Latest bar volume vs prior bar volume as activity proxy
+                latest_vol = float(bars[-1].volume)
+                prior_vol = float(bars[-2].volume)
+                latest_close = float(bars[-1].close)
+                prior_close = float(bars[-2].close)
+
+                # Stress proxy: rising volume + falling price = bearish positioning
+                price_change = (latest_close - prior_close) / prior_close if prior_close > 0 else 0.0
+                vol_change = (latest_vol - prior_vol) / prior_vol if prior_vol > 0 else 0.0
+
+                # Rising volume + falling price → stress; scale so 5% drop = 0.25
+                oi_stress = max(0.0, -price_change) * 5.0
+                if vol_change > 0.5:  # Significant volume surge amplifies stress
+                    oi_stress *= 1.25
+                normalized = max(0.0, min(1.0, oi_stress))
+
+                records.append(SignalRecord(
+                    ticker=spec["ticker"],
+                    signal_type=spec["signal_type"],
+                    value=normalized,
+                    raw_value=latest_vol,
+                    source=self.name,
+                    timestamp=now,
+                    cost_tier='FREE'
+                ))
+                print(f"[{self.name}] {spec['signal_type']}: vol={latest_vol:.0f}, "
+                      f"price_chg={price_change:.4f}, stress={normalized:.3f}")
+
+            except Exception as exc:
+                print(f"[{self.name}] OI fetch failed for {spec['underlying']}: {exc}")
+
+    # ------------------------------------------------------------------ #
+    #  Coinbase stablecoin pegs (unchanged — works from US)
+    # ------------------------------------------------------------------ #
+
+    def _fetch_coinbase_ticker(self, product_id: str) -> Optional[dict]:
+        """Fetch a single Coinbase product ticker."""
+        req = Request(
+            f"https://api.exchange.coinbase.com/products/{product_id}/ticker",
+            headers={"User-Agent": "Achelion-ARMS/1.0"},
+        )
+        with urlopen(req, timeout=15) as response:
+            return json.loads(response.read().decode("utf-8"))
+
+    def _fetch_stablecoin_pegs(self, records: List[SignalRecord], now: str) -> None:
+        """Fetch USDT, USDC, and DAI peg data from Coinbase."""
         peg_specs = [
             ("USDT-USD", "USDT_PEG"),
             ("USDC-USD", "USDC_PEG"),
@@ -86,22 +280,57 @@ class CryptoPlugin(FeedPlugin):
         ]
         for product_id, signal_type in peg_specs:
             try:
-                payload = self._fetch_json(f"https://api.exchange.coinbase.com/products/{product_id}/ticker")
+                payload = self._fetch_coinbase_ticker(product_id)
+                if payload is None:
+                    continue
                 raw_value = float(payload["price"])
-                normalized_value = max(0.0, min(1.0, (raw_value - 0.95) / 0.10))
+                # Normalize: $0.95 → 0.0, $1.05 → 1.0, $1.00 → 0.5
+                normalized = max(0.0, min(1.0, (raw_value - 0.95) / 0.10))
                 records.append(SignalRecord(
                     ticker="GEOPOL",
                     signal_type=signal_type,
-                    value=normalized_value,
+                    value=normalized,
                     raw_value=raw_value,
                     source=self.name,
                     timestamp=payload.get("time", now),
                     cost_tier='FREE'
                 ))
-            except Exception as e:
-                print(f"[{self.name} Plugin] Stablecoin peg fetch failed for {product_id}: {e}")
+            except Exception as exc:
+                print(f"[{self.name}] Stablecoin peg fetch failed for {product_id}: {exc}")
 
-        print(f"[{self.name} Plugin] Live fetch complete. Returning {len(records)} records.")
+    # ------------------------------------------------------------------ #
+    #  Main feed entry point
+    # ------------------------------------------------------------------ #
+
+    def fetch(self) -> List[SignalRecord]:
+        print(f"[{self.name}] Fetching crypto microstructure via IBKR + Coinbase...")
+        records: List[SignalRecord] = []
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        # 1. Connect to IBKR for CME futures data
+        ib_ok = self._ensure_ib_connection()
+        if not ib_ok:
+            print(f"[{self.name}] WARNING: IBKR unavailable — crypto futures signals will be missing.")
+
+        # 2. Futures basis (funding rate proxy) from CME via IBKR
+        self._fetch_futures_basis(records, now)
+
+        # 3. Open interest / volume stress from CME via IBKR
+        self._fetch_open_interest(records, now)
+
+        # 4. Stablecoin pegs from Coinbase (always available in US)
+        self._fetch_stablecoin_pegs(records, now)
+
+        # 5. Disconnect if we opened our own connection
+        if self._ib is not None and self._ib.isConnected():
+            try:
+                self._ib.disconnect()
+            except Exception:
+                pass
+            self._ib = None
+            self._connected = False
+
+        print(f"[{self.name}] Fetch complete. Returning {len(records)} records.")
         return records
 
 

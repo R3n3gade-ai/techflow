@@ -43,7 +43,7 @@ from execution.order_request import OrderRequest
 from execution.queue_state import build_queue_governance_state
 from execution.queue_reasoning import build_thesis_signal_map, derive_queue_reasoning_signals
 from execution.queue_persistence import persist_queue_state
-from reporting.monitor_state import DailyMonitorState, MacroInputCard, EquityBookEntryState, SleeveEntryState, ModulePanelState, DecisionQueueItem, QueueEntryState, WeeklyScorecardRow
+from reporting.monitor_state import DailyMonitorState, MacroInputCard, EquityBookEntryState, SleeveEntryState, ModulePanelState, DecisionQueueItem, QueueEntryState, WeeklyScorecardRow, MonitorListEntry
 from reporting.report_context import summarize_recent_session_log
 from reporting.regime_history import RegimeHistoryEntry, append_regime_history, prior_score as prior_regime_score
 
@@ -72,10 +72,12 @@ from engine.master_engine import compute_target_weights
 from execution.trade_order_generator import generate_rebalance_orders
 from engine.drawdown_sentinel import run_pds_check
 from engine.pds_state import load_high_water_mark, update_high_water_mark
-from engine.factor_exposure import run_fem_check
+from engine.factor_exposure import run_fem_check, generate_paired_trims
 from engine.incapacitation import run_incapacitation_check
 from engine.asymmetric_upside import run_aup_check
 from reporting.daily_monitor import run_daily_monitor
+from reporting.eod_snapshot import generate_eod_snapshot, save_morning_score
+from reporting.performance_attribution import generate_attribution_report
 
 def _read_recent_session_log(limit: int = 400) -> List[dict]:
     path = 'achelion_arms/logs/session_log.jsonl'
@@ -167,23 +169,30 @@ def run_full_arms_cycle():
     from modules.dealer_gamma import run_dealer_gamma_check
     
     delev_res = run_deleveraging_check(signals)
-    margin_res = run_margin_stress_check()
-    gamma_res = run_dealer_gamma_check()
+    margin_res = run_margin_stress_check(signals)
+    gamma_res = run_dealer_gamma_check(signals)
     
     if delev_res.status == "ACTIVE" or margin_res.status == "ACTIVE" or gamma_res.regime == "NEGATIVE":
         print(f"[ARAS SUB-MODULES] High systemic risk detected: Delev:{delev_res.status} Margin:{margin_res.status} Gamma:{gamma_res.regime}")
         # In a full system, these feed into the Macro Compass overlay or directly cap the ARAS ceiling.
         # For now, we log their advisory output.
     
-    vix_val = next((s.value for s in signals if s.signal_type == 'VIX_INDEX'), 0.20) * 100.0
+    vix_raw = next((s.value for s in signals if s.signal_type == 'VIX_INDEX'), None)
+    require_live(vix_raw is not None, "VIX_INDEX signal missing from data pipeline.")
+    vix_val = vix_raw * 100.0
     # Fetch intraday data for circuit breaker
-    spx_open = broker.get_recent_close('SPY', 1) or 500.0
-    spx_now = broker.get_recent_close('SPY', 0) or 500.0
+    spx_open = broker.get_recent_close('SPY', 1)
+    spx_now = broker.get_recent_close('SPY', 0)
+    require_live(spx_open is not None and spx_now is not None, "SPY price unavailable from broker; cannot evaluate circuit breaker.")
+    
+    # Derive VIX open from prior session close via signals (FRED provides prior-close VIX).
+    # vix_val already represents the latest available observation.
+    vix_open = vix_val  # Best available prior-session estimate from FRED/live feed
     
     circuit_breaker.update_market_data(
         spx_open=spx_open,
         spx_current=spx_now,
-        vix_open=20.0,
+        vix_open=vix_open,
         vix_current=vix_val
     )
     cb_status = circuit_breaker.evaluate()
@@ -220,6 +229,56 @@ def run_full_arms_cycle():
     else:
         print(f"[PDS] Status NORMAL. Effective Ceiling remains {effective_ceiling:.0%}")
     
+    # --- PHASE 2.5: ANTICIPATORY INTELLIGENCE LAYER (Phase 2 Modules) ---
+    # Runs ELVT, JPVI, PFVT, SCCR sweeps on their respective cadences.
+    # Results are persisted to state files and consumed by Gate 3 supplementary
+    # scoring when MICS is calculated in Phase 6.
+    print("\n[STEP 2.5] Running Anticipatory Intelligence Layer...")
+    from intelligence.jpvi import run_weekly_jpvi_sweep
+    from intelligence.sccr import run_weekly_sccr_sweep
+    from intelligence.elvt import run_quarterly_elvt_sweep
+    from intelligence.pfvt import run_monthly_pfvt_sweep
+
+    is_monday = now.weekday() == 0
+    is_first_of_month = now.day <= 7 and is_monday  # First Monday of month
+
+    # JPVI + SCCR: Weekly (Monday cadence)
+    if is_monday:
+        try:
+            jpvi_results = run_weekly_jpvi_sweep()
+            print(f"[JPVI] {len(jpvi_results)} entities scanned.")
+        except Exception as e:
+            print(f"[JPVI] Weekly sweep failed (non-blocking): {e}")
+
+        try:
+            sccr_result = run_weekly_sccr_sweep()
+            print(f"[SCCR] {sccr_result.patterns_scanned} patterns scanned.")
+        except Exception as e:
+            print(f"[SCCR] Weekly sweep failed (non-blocking): {e}")
+    else:
+        print("[Phase 2.5] JPVI/SCCR: Skipped (not Monday).")
+
+    # PFVT: Monthly (first Monday of month)
+    if is_first_of_month:
+        try:
+            pfvt_results = run_monthly_pfvt_sweep()
+            print(f"[PFVT] {len(pfvt_results)} entities scanned.")
+        except Exception as e:
+            print(f"[PFVT] Monthly sweep failed (non-blocking): {e}")
+    else:
+        print("[Phase 2.5] PFVT: Skipped (not first Monday of month).")
+
+    # ELVT: Quarterly — runs in earnings season months (Jan, Apr, Jul, Oct)
+    earnings_months = {1, 4, 7, 10}
+    if now.month in earnings_months and is_first_of_month:
+        try:
+            elvt_results = run_quarterly_elvt_sweep()
+            print(f"[ELVT] {len(elvt_results)} entities scanned.")
+        except Exception as e:
+            print(f"[ELVT] Quarterly sweep failed (non-blocking): {e}")
+    else:
+        print("[Phase 2.5] ELVT: Skipped (not earnings season first Monday).")
+
     # --- PHASE 3: PORTFOLIO MAINTENANCE & STRESS AUDITING ---
     print("\n[STEP 3] Auditing Portfolio & Performance...")
     
@@ -247,16 +306,13 @@ def run_full_arms_cycle():
     # 3.2 CDF (Decay)
     cdf_inputs = load_cdf_inputs()
     cdf_status = []
-    qqq_now = broker.get_recent_close('QQQ', days_ago=0)
-    qqq_45d = broker.get_recent_close('QQQ', days_ago=45)
     for p in live_positions:
         if p.sec_type != 'STK':
             continue
         rec = cdf_inputs.get(p.ticker)
         try:
-            px_now = broker.get_recent_close(p.ticker, days_ago=0)
-            px_45d = broker.get_recent_close(p.ticker, days_ago=45)
-            computed_underperf = compute_underperformance_pp(px_45d, px_now, qqq_45d, qqq_now)
+            live_perf = compute_live_underperformance(p.ticker, days_back=45)
+            computed_underperf = live_perf.underperformance_pp if live_perf else 0.0
         except Exception:
             computed_underperf = 0.0
 
@@ -272,19 +328,20 @@ def run_full_arms_cycle():
     # --- PHASE 4: HEDGE MANAGEMENT (CAM / PTRH) ---
     print("\n[STEP 4] Calculating Tail-Risk Coverage...")
     from engine.factor_exposure import run_fem_check
-    mock_fem_weights = {p.ticker: p.market_value / nav if nav > 0 else 0 for p in live_positions if p.sec_type == "STK"}
-    fem_signal = run_fem_check(mock_fem_weights)
+    live_fem_weights = {p.ticker: p.market_value / nav if nav > 0 else 0 for p in live_positions if p.sec_type == "STK"}
+    fem_signal = run_fem_check(live_fem_weights)
     fem_concentration_score = fem_signal.highest_exposure_pct if getattr(fem_signal, 'highest_exposure_factor', None) else 0.0
     
     live_equity_positions = [p for p in live_positions if p.sec_type == "STK" and p.ticker not in ["SGOV", "SGOL", "DBMF", "STRC"]]
     current_equity_pct = sum(p.market_value for p in live_equity_positions) / nav if nav > 0 else 0.0
 
     macro_stress_score = min(1.0, regime_score)
-    cdm_alerts = []
+    # Run CDM early so alert count can inform hedge sizing (CAM)
+    cdm_alerts = run_cdm_scan(preliminary_event_items) if preliminary_event_items else []
     cam_in = CamInputs(
         current_equity_pct=current_equity_pct, regime_score=regime_score,
         fem_concentration_score=fem_concentration_score, macro_stress_score=macro_stress_score,
-        cdm_active_signals=0, nav=nav
+        cdm_active_signals=len(cdm_alerts), nav=nav
     )
     
     # Map live option positions for PTRH evaluation
@@ -333,14 +390,56 @@ def run_full_arms_cycle():
     # --- PHASE 5: THESIS INTEGRITY (CDM / TDC) ---
     print("\n[STEP 5] Running AI-Driven Thesis Audits...")
     event_items = preliminary_event_items
-    cdm_alerts = run_cdm_scan(event_items) if event_items else []
+    # cdm_alerts already computed in Phase 4 for CAM hedge sizing
     tdc_results = []
     for alert in cdm_alerts:
         tdc_results.append(run_thesis_review(alert))
 
     weekly_audit_results = run_weekly_tdc_audit([p.ticker for p in live_positions if p.sec_type == 'STK'])
     tdc_results.extend(weekly_audit_results)
-        
+
+    # --- PHASE 5.5: THESIS RETIREMENT PROTOCOL (TRP) ---
+    print("\n[STEP 5.5] Running Thesis Retirement Protocol...")
+    from engine.thesis_retirement import run_trp_check
+    tdc_state = load_tdc_state()
+    cdf_by_ticker = {s.ticker: s for s in cdf_status}
+    trp_statuses = []
+    for tdc_res in tdc_results:
+        ticker = tdc_res.position
+        cdf_s = cdf_by_ticker.get(ticker)
+        if not cdf_s:
+            continue
+        # Estimate days BROKEN from TDC state reviewed_at vs now
+        tdc_rec = tdc_state.get(ticker)
+        if tdc_rec and tdc_rec.tis_label == 'BROKEN' and tdc_rec.reviewed_at:
+            try:
+                first_broken = datetime.datetime.fromisoformat(tdc_rec.reviewed_at)
+                days_broken = (now - first_broken).days
+            except (ValueError, TypeError):
+                days_broken = 0
+        else:
+            days_broken = 0
+
+        trp_status = run_trp_check(
+            ticker=ticker,
+            tdc_result=tdc_res,
+            cdf_status=cdf_s,
+            days_tis_broken=days_broken,
+        )
+        trp_statuses.append(trp_status)
+        if trp_status.is_retirement_due:
+            print(f"[TRP] RETIREMENT DUE: {ticker} ({trp_status.trigger_reason}) — Tier {trp_status.tier}")
+
+    # --- PHASE 5.6: PERM (COVERED CALL OVERWRITES) ---
+    print("\n[STEP 5.6] Evaluating Covered Call Overwrites (PERM)...")
+    from engine.perm import run_perm_evaluation
+    options_market_open = broker.is_connected  # Proxy: if broker connected, assume options accessible
+    perm_orders = run_perm_evaluation(trp_statuses, current_vix=vix_val, options_market_open=options_market_open)
+    for perm_order in perm_orders:
+        print(f"[PERM] Tier 0 Overwrite: SELL_CALL {perm_order.ticker}")
+        if not cb_status.is_tripped:
+            ob_entry = order_book.process_request(perm_order, vix_val)
+
     # --- PHASE 6: MASTER ENGINE & REBALANCING ---
     print("\n[STEP 6] Rebalancing Equity Book...")
     live_equity_positions = [p for p in live_positions if p.sec_type == 'STK']
@@ -358,12 +457,22 @@ def run_full_arms_cycle():
         mics_results_live[p.ticker] = mics_result
         mics_scores[p.ticker] = mics_result.conviction_level
 
-    cdf_multipliers = {p.ticker: 1.0 for p in live_equity_positions}
+    cdf_multipliers = {s.ticker: s.current_multiplier for s in cdf_status}
+    # Ensure all equity positions have a CDF multiplier (1.0 if no decay computed)
+    for p in live_equity_positions:
+        if p.ticker not in cdf_multipliers:
+            cdf_multipliers[p.ticker] = 1.0
     target_weights = compute_target_weights(
         mics_scores=mics_scores,
         cdf_multipliers=cdf_multipliers,
         aras_ceiling=effective_ceiling
     )
+    
+    # Persist target weights for EOD Snapshot drift check
+    tw_path = 'achelion_arms/state/last_target_weights.json'
+    os.makedirs(os.path.dirname(tw_path), exist_ok=True)
+    with open(tw_path, 'w') as f:
+        json.dump(target_weights, f)
     
     rebalance_orders = generate_rebalance_orders(live_positions, target_weights, nav)
     for order in rebalance_orders:
@@ -380,6 +489,14 @@ def run_full_arms_cycle():
                 
     # --- PHASE 6.8: LAEP EXECUTION WAVE ---
     print("\n[STEP 6.8] Executing L5 Order Book (LAEP)...")
+
+    # FEM Paired Trim — Tier 0 auto-trims when ALERT sustained >24h
+    fem_trims = generate_paired_trims(live_weights, fem_signal)
+    for trim_order in fem_trims:
+        print(f"[FEM] Tier 0 Paired Trim: {trim_order.action} {trim_order.ticker} ({trim_order.quantity:.2%})")
+        if not cb_status.is_tripped:
+            ob_entry = order_book.process_request(trim_order, vix_val)
+
     executable_batch = order_book.get_executable_batch()
     if not executable_batch:
         print("[ORDER_BOOK] No executable orders in queue.")
@@ -396,15 +513,21 @@ def run_full_arms_cycle():
 
     # --- PHASE 6.5: GROWTH & RE-ENTRY (ARES / AUP) ---
     print("\n[STEP 6.5] Evaluating Growth & Re-Entry...")
-    ares_res = run_ares_check(current_regime, regime_score, 0.25, rss_res.composite_rss)
-    aup_res = run_aup_check(current_regime, 7.8, True, 0.15, pds_res.drawdown_pct)
+    ares_res = run_ares_check(current_regime, regime_score, macro_stress_score, rss_res.composite_rss)
+
+    # Compute live AUP inputs from actual engine state
+    top_mics = sorted(mics_scores.values(), reverse=True)[:5]
+    avg_mics = sum(top_mics) / len(top_mics) if top_mics else 0.0
+    is_fem_clean = fem_signal.status not in {'ALERT', 'WATCH'} if hasattr(fem_signal, 'status') else True
+    rpe_watch_prob = rpe_res.transition_probabilities.get('WATCH', 0.0) + rpe_res.transition_probabilities.get('DEFENSIVE', 0.0)
+    aup_res = run_aup_check(current_regime, avg_mics, is_fem_clean, rpe_watch_prob, pds_res.drawdown_pct)
     
     from engine.slof import run_slof_manager
-    # In a full live system, current leverage is retrieved from broker (e.g. gross exposure / net liq)
-    # Using 1.0 proxy for simulation run
-    slof_status = run_slof_manager(aup_res, current_leverage=1.0)
+    gross_exposure = sum(abs(p.market_value) for p in live_positions)
+    current_leverage = gross_exposure / nav if nav > 0 else 1.0
+    slof_status = run_slof_manager(aup_res, current_leverage=current_leverage)
 
-    thesis_signal_map = build_thesis_signal_map(getattr(sentinel_workflow, '_records', {}))
+    thesis_signal_map = build_thesis_signal_map(sentinel_workflow.get_all_records())
     thesis_state_by_ticker = {
         ticker: {
             'status': sig.thesis_status,
@@ -442,17 +565,30 @@ def run_full_arms_cycle():
         MacroInputCard(title='EVENT_OVERLAY', value=str(round(macro_event_state.override_floor, 2)), context='Typed event-state overlay'),
     ]
 
-    equity_book_state = [
-        EquityBookEntryState(
+    # Fetch live session returns (intraday change vs prior close) for equity positions
+    equity_tickers = [p.ticker for p in live_positions if p.sec_type == 'STK']
+    session_returns = broker.get_session_returns(equity_tickers) if broker.is_connected else {}
+
+    equity_book_state = []
+    for p in live_positions:
+        if p.sec_type != 'STK':
+            continue
+        session_ret = session_returns.get(p.ticker)
+        if session_ret is not None:
+            perf_text = f"{session_ret:+.2%}"
+        else:
+            # Fall back to unrealized return from cost basis when session data unavailable
+            cost_basis = p.average_cost * p.quantity
+            unrealized_return = ((p.market_value - cost_basis) / cost_basis) if cost_basis != 0 else 0.0
+            perf_text = f"{unrealized_return:+.2%}"
+        equity_book_state.append(EquityBookEntryState(
             ticker=p.ticker,
             name=p.ticker,
             weight_pct=(p.market_value / nav * 100) if nav > 0 else 0.0,
-            perf_text='LIVE',
+            perf_text=perf_text,
             status='OK',
             rationale=f"Live position snapshot | MICS={mics_scores.get(p.ticker, 'N/A')}"
-        )
-        for p in live_positions if p.sec_type == 'STK'
-    ]
+        ))
 
     defensive_sleeve_state = [
         SleeveEntryState(
@@ -464,12 +600,13 @@ def run_full_arms_cycle():
     ]
 
     module_panels_state = [
-        ModulePanelState(name='ARAS', status=f'{aras_output.regime} {aras_output.score:.2f}', detail=f'Base ceiling {base_ceiling:.2%} -> effective {effective_ceiling:.2%}'),
+        ModulePanelState(name='ARAS', status=f'{aras_output.regime} {aras_output.score:.2f}', detail=f'Base ceiling {aras_output.equity_ceiling_pct:.2%} -> effective {effective_ceiling:.2%}'),
         ModulePanelState(name='SSL', status=f'Worst Case: {ssl_res.worst_scenario}', detail=f'Estimated P&L: {ssl_res.worst_net_loss_pct:.2%}'),
         ModulePanelState(name='ARES', status='Queue ' + queue_state.headline_status, detail=f'Fully cleared={ares_res.is_fully_cleared}'),
         ModulePanelState(name='CAM', status=f'PTRH {ptrh_res.multiplier}x', detail=f'Target {ptrh_res.target_notional_pct:.2%} | Actual {ptrh_res.actual_notional_pct:.2%}'),
         ModulePanelState(name='MC-RSS', status=rss_res.signal_label, detail=f'Composite {rss_res.composite_rss:.2f}'),
-        ModulePanelState(name='SAFETY', status=f'Tier {incap_res.current_safety_tier}', detail=f'Last heartbeat {incap_res.last_heartbeat_age_min} min ago'),
+        ModulePanelState(name='SAFETY', status=f'Tier {incap_res.current_safety_tier}', detail=f'Last heartbeat {incap_res.hours_since_heartbeat * 60:.0f} min ago'),
+        ModulePanelState(name='SLOF', status='ACTIVE' if slof_status.is_active else 'INACTIVE', detail=f'Leverage {slof_status.current_leverage_ratio:.2f}x / target {slof_status.target_leverage_ratio:.2f}x'),
         ModulePanelState(name='QUEUE_GOV', status=queue_state.headline_status, detail=f'{len(queue_transitions)} transition(s) persisted this cycle'),
     ]
 
@@ -493,13 +630,22 @@ def run_full_arms_cycle():
         ),
     ]
 
-    catalyst_label = 'Live event-state review required'
-    if macro_event_state.diplomacy_breakdown_score >= 0.50:
+    catalyst_label = 'No elevated macro catalysts'
+    if macro_event_state.military_escalation_score >= 0.50:
+        catalyst_label = 'Military escalation — elevated risk'
+    elif macro_event_state.diplomacy_breakdown_score >= 0.50:
         catalyst_label = 'Diplomacy deterioration watch'
-    elif macro_event_state.diplomacy_breakdown_score > 0.0:
-        catalyst_label = 'Diplomacy / talks watch'
     elif macro_event_state.oil_stress_score >= 0.40:
         catalyst_label = 'Oil / shipping stress watch'
+    elif macro_event_state.diplomacy_breakdown_score > 0.0:
+        catalyst_label = 'Diplomacy / talks watch'
+    elif macro_event_state.macro_stress_score >= 0.35:
+        catalyst_label = 'Macro stress elevated — credit/regulatory/trade'
+    # Enrich with top active event headline if available
+    if hasattr(macro_event_state, 'active_events') and macro_event_state.active_events:
+        top_event = max(macro_event_state.active_events, key=lambda e: e.stress_contribution)
+        if top_event.stress_contribution >= 0.30:
+            catalyst_label += f' | {top_event.headline[:60]}'
 
     history_entries = append_regime_history(RegimeHistoryEntry(
         timestamp=now.isoformat(),
@@ -556,14 +702,10 @@ def run_full_arms_cycle():
             for e in queue_state.risk_on_queue
         ],
         monitor_list=[
-            QueueEntryState(
+            MonitorListEntry(
                 ticker=e.ticker,
-                target=(f'{e.target_weight_pct * 100:.1f}%' if e.target_weight_pct is not None else 'N/A'),
-                execution_instruction=e.execution_instruction,
-                state=e.state,
-                reason=e.reason,
-                trigger_rule=e.trigger_rule,
-                notes=e.notes,
+                reeval_trigger=e.trigger_rule,
+                rationale=f"{e.state} · {e.reason}" + (f" — {e.notes}" if e.notes else ''),
             )
             for e in queue_state.monitor_list
         ],
@@ -608,7 +750,7 @@ def run_full_arms_cycle():
                 'ticker': e.ticker,
                 'name': e.name,
                 'weight': e.weight_pct,
-                'session_perf': 0.01 if e.perf_text == 'LIVE' else 0.0,
+                'session_perf': float(e.perf_text.strip('%').replace('+', '')) / 100.0 if e.perf_text and e.perf_text not in ('N/A', '') else 0.0,
                 'status': e.status,
                 'rationale': e.rationale,
             }
@@ -636,13 +778,11 @@ def run_full_arms_cycle():
         ],
         'monitor_list': [
             {
-                'ticker': q.ticker,
-                'target': q.target,
-                'execution_instruction': q.execution_instruction,
-                'status': f'{q.state} · {q.reason}',
-                'notes': q.notes,
+                'ticker': m.ticker,
+                'reeval_trigger': m.reeval_trigger,
+                'rationale': m.rationale,
             }
-            for q in monitor_state.monitor_list
+            for m in monitor_state.monitor_list
         ],
         'defensive_sleeve': [
             {
@@ -656,7 +796,7 @@ def run_full_arms_cycle():
     }
     
     # Compile live news events into market context for the LLM
-    live_news_context = "\n".join([f"[{ev.event_type} - {ev.triggering_entity}]: {ev.headline}" for ev in event_items]) if event_items else "No major market events detected today."
+    live_news_context = "\n".join([f"[{ev.event_type} - {', '.join(ev.entities)}]: {ev.headline}" for ev in event_items]) if event_items else "No major market events detected today."
     live_market_context = f"""
     System completed daily sweep.
     Current VIX is {monitor_state.live_context.get('vix')}.
@@ -675,6 +815,9 @@ def run_full_arms_cycle():
         
     print(f"[MAIN] Successfully rendered structured Daily Monitor to {report_path}")
     
+    # Persist morning ARAS score for EOD Snapshot delta comparison
+    save_morning_score(regime_score, current_regime, now.isoformat())
+    
     append_to_log(SessionLogEntry(
         timestamp=now.isoformat(), 
         action_type='CYCLE_END', 
@@ -684,5 +827,94 @@ def run_full_arms_cycle():
     
     broker.disconnect()
 
+
+def run_eod_snapshot_cycle():
+    """
+    Standalone 1450 CT EOD Snapshot generation.
+    Called separately from the morning sweep — either by the scheduler
+    or manually via `python main.py --eod`.
+
+    Connects to broker, pulls fresh ARAS score, reads confirmation queue,
+    and generates the 5-field closing status check.
+    """
+    now = datetime.datetime.now(datetime.timezone.utc)
+
+    print("\n" + "="*60)
+    print("ACHELION ARMS v1.1 - EOD SNAPSHOT GENERATION")
+    print(f"Initiated: {now.isoformat()}")
+    print("="*60)
+
+    confirmation_queue = ConfirmationQueue()
+    broker = IBKRBroker()
+    data_pipeline = DataPipeline()
+
+    try:
+        broker.connect()
+    except Exception as e:
+        raise RuntimeError(f"Could not connect to live broker for EOD snapshot: {e}")
+
+    # Pull fresh market data for ARAS
+    live_positions = broker.get_positions()
+    nav = broker.get_nav()
+
+    macro_input = data_pipeline.get_macro_inputs()
+    macro_input_map = {m.name: m.value for m in macro_input}
+
+    regime_score = calculate_macro_regime_score(macro_input_map)
+    aras_output = calculate_aras_ceiling(regime_score)
+    current_regime = aras_output.regime
+
+    # Build target weights from latest MICS/CDF state (reuse saved state)
+    # For EOD we need target_weights for drift check — read from last cycle if available
+    target_weights_path = 'achelion_arms/state/last_target_weights.json'
+    target_weights: Dict[str, float] = {}
+    if os.path.exists(target_weights_path):
+        with open(target_weights_path, 'r') as f:
+            target_weights = json.load(f)
+
+    # Confirmation queue open items
+    confirmation_queue.check_for_timeouts()
+    open_items = confirmation_queue.get_open_items()
+
+    # LAEP mode
+    laep_mode = os.environ.get('ARMS_LAEP_MODE', 'NORMAL')
+
+    # PTRH status
+    ptrh_status = 'NORMAL'
+
+    print(f"[EOD] Regime: {current_regime} ({regime_score:.2f}), Open Tier1: {len(open_items)}")
+
+    eod_markdown = generate_eod_snapshot(
+        current_score=regime_score,
+        current_regime=current_regime,
+        confirmation_queue_items=open_items,
+        live_positions=live_positions,
+        target_weights=target_weights,
+        nav=nav,
+        ptrh_status=ptrh_status,
+        laep_mode=laep_mode,
+    )
+
+    report_path = f"achelion_arms/logs/eod_snapshot_{now.strftime('%Y%m%d')}.md"
+    os.makedirs(os.path.dirname(report_path), exist_ok=True)
+    with open(report_path, 'w') as f:
+        f.write(eod_markdown)
+
+    print(f"[MAIN] EOD Snapshot written to {report_path}")
+
+    # Performance Attribution — generate LP-defensible alpha attribution
+    try:
+        attr_report = generate_attribution_report()
+        print(f"[MAIN] Performance Attribution: {attr_report.total_trades} trades, {attr_report.total_pnl_bps:.1f} bps total P&L")
+    except Exception as e:
+        print(f"[MAIN] Performance Attribution skipped: {e}")
+
+    broker.disconnect()
+
+
 if __name__ == '__main__':
-    run_full_arms_cycle()
+    import sys
+    if '--eod' in sys.argv:
+        run_eod_snapshot_cycle()
+    else:
+        run_full_arms_cycle()

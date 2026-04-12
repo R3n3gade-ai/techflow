@@ -1,3 +1,8 @@
+> **? STALE DOCUMENT — NOT AUTHORITATIVE**
+> This document predates significant code changes (April 2026 remediation cycle).
+> For current system truth, see: ARMS_NEXT_WAVE_COLD_TRUTH_AUDIT_2026-04-10.md
+> and ARMS_REMEDIATION_MASTER_PLAN_2026-04-10.md
+
 # Achelion ARMS Engineering Audit v3 (Full Document Reconciliation)
 
 This is a comprehensive audit comparing the stated architecture across the 12 canonical documents in the workspace against the actual physical files present in the `achelion_arms` repository.

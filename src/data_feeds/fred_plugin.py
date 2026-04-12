@@ -106,7 +106,7 @@ class FredPlugin(FeedPlugin):
                 if STRICT_LIVE_MODE:
                     print(message + " Strict live mode forbids synthetic fallback.")
                     raise RuntimeError(f"Critical FRED series unavailable in strict live mode: {series_id}") from e
-                print(message + " Using fallback because strict live mode is disabled.")
+                print(message + " Using SYNTHETIC fallback (ARMS_STRICT_LIVE=0). These values are NOT market data.")
                 fallback_vals = {"FED_FUNDS_RATE": 5.25, "10Y_TREASURY_YIELD": 4.10, "VIX_INDEX": 20.5, "HY_CREDIT_SPREAD": 4.2}
                 raw_value = fallback_vals.get(signal_type, 1.0)
                 records.append(SignalRecord(
@@ -114,7 +114,7 @@ class FredPlugin(FeedPlugin):
                     signal_type=signal_type,
                     value=self._normalize_value(signal_type, raw_value),
                     raw_value=raw_value,
-                    source=self.name,
+                    source=f"{self.name}_SYNTHETIC",
                     timestamp=fetched_at,
                     cost_tier='FALLBACK'
                 ))

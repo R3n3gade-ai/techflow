@@ -86,9 +86,11 @@ def _parse_rss(xml_text: str, source_name: str) -> List[NewsItem]:
 
 
 def fetch_public_rss_events() -> List[NewsItem]:
+    # Build Yahoo RSS ticker list dynamically from position dependency map
+    portfolio_tickers = ','.join(sorted(POSITION_DEPENDENCIES.keys()))
     urls = [
         ('SEC_RSS', 'https://www.sec.gov/news/pressreleases.rss'),
-        ('YAHOO_FINANCE_RSS', 'https://feeds.finance.yahoo.com/rss/2.0/headline?s=NVDA,TSLA,GOOGL,AVGO,MRVL,MU,ALAB,ANET,AMD,PLTR,ARM,VRT,ETN&region=US&lang=en-US')
+        ('YAHOO_FINANCE_RSS', f'https://feeds.finance.yahoo.com/rss/2.0/headline?s={portfolio_tickers}&region=US&lang=en-US')
     ]
 
     all_items: List[NewsItem] = []

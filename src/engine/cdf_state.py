@@ -63,11 +63,25 @@ def save_cdf_state(state: Dict[str, CDFPersistentState]):
 
 def update_cdf_state(ticker: str, underperformance_pp: float, threshold_pp: float = 10.0) -> CDFPersistentState:
     state = load_cdf_state()
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(timezone.utc)
+    now_iso = now.isoformat()
+    today_date = now.date()
     existing = state.get(ticker)
 
     if underperformance_pp >= threshold_pp:
-        new_days = (existing.underperforming_days + 1) if existing else 1
+        if existing:
+            # Only increment day counter on a new calendar day
+            try:
+                last_date = datetime.fromisoformat(existing.updated_at).date()
+            except (ValueError, TypeError):
+                last_date = None
+            if last_date == today_date:
+                # Same day — keep existing count, just update timestamp
+                new_days = existing.underperforming_days
+            else:
+                new_days = existing.underperforming_days + 1
+        else:
+            new_days = 1
     else:
         new_days = 0
 
@@ -75,7 +89,7 @@ def update_cdf_state(ticker: str, underperformance_pp: float, threshold_pp: floa
         ticker=ticker,
         underperforming_days=new_days,
         last_underperformance_pp=underperformance_pp,
-        updated_at=now,
+        updated_at=now_iso,
     )
     state[ticker] = rec
     save_cdf_state(state)

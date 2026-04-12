@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import json
+import logging
+import os
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
 from engine.cdm import CdmAlert
 from engine.tdc_state import TdcTickerState
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -25,16 +30,67 @@ class QueueReasoningSignal:
 
 
 KNOWN_RISK_ON_ONLY = {'NVDA'}
-KNOWN_SENTINEL_UNCONFIRMED = {'BE'}
-CONSENSUS_PRICED_HINTS = {
-    'GEV': 'Power Singularity enthusiasm is already reflected in price / narrative.',
-    'CEG': 'Nuclear / AI power demand thesis is treated as consensus-priced.',
-    'VST': 'Texas grid + AI demand thesis is widely recognized and no longer clearly pre-consensus.',
-    'VRT': 'Business remains valid, but queue size-up asymmetry appears weaker than earlier cycle phase.'
-}
-PRECONSENSUS_HINTS = {
-    'GOOGL': 'Market may still be using the wrong identity to price the asset, preserving Gate 3 asymmetry.'
-}
+
+
+def _is_sentinel_unconfirmed(ticker: str, thesis: Optional[ThesisSignal]) -> bool:
+    """
+    Check if a ticker is SENTINEL-unconfirmed using live thesis data
+    instead of a hardcoded set. A ticker is unconfirmed if:
+    - No SENTINEL record exists at all
+    - SENTINEL record exists but status is REJECTED or DRAFT with no gate passage
+    """
+    if thesis is None:
+        return True
+    if thesis.thesis_status in {'REJECTED', 'MISSING', 'RETIRED'}:
+        return True
+    if thesis.thesis_status == 'DRAFT' and thesis.gate3_score is None:
+        return True
+    return False
+
+
+# Consensus-priced signals — loaded from PM-editable data file.
+# Live TIS heuristic supplements explicit overrides.
+from engine.bridge_paths import bridge_path as _bridge_path
+CONSENSUS_OVERRIDES_PATH = _bridge_path('ARMS_CONSENSUS_JSON', 'consensus_overrides.json')
+
+
+def _load_consensus_overrides() -> dict:
+    """Load PM-editable consensus/preconsensus overrides from JSON data file."""
+    if not os.path.exists(CONSENSUS_OVERRIDES_PATH):
+        logger.warning("consensus_overrides.json not found; using empty overrides")
+        return {}
+    try:
+        with open(CONSENSUS_OVERRIDES_PATH, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        logger.error("Failed to load consensus_overrides.json: %s", e)
+        return {}
+
+
+def _detect_tis_consensus(ticker: str, thesis: Optional[ThesisSignal],
+                          tdc_state: Optional[TdcTickerState]) -> Optional[QueueReasoningSignal]:
+    """
+    Live TIS-derived consensus detection:
+    - Low gate3_score (10-14) with INTACT TIS = thesis valid but asymmetry eroding
+    - tis_score < 0.4 with non-BROKEN label = valuation compression / consensus convergence
+    """
+    if tdc_state and tdc_state.tis_label == 'INTACT' and tdc_state.tis_score < 0.4:
+        return QueueReasoningSignal(
+            ticker=ticker,
+            reason='CONSENSUS_CONVERGING',
+            action='MONITOR',
+            confidence='MEDIUM',
+            note=f'TIS score {tdc_state.tis_score:.2f} (INTACT) suggests thesis valid but asymmetry eroding.'
+        )
+    if thesis and thesis.gate3_score is not None and 10 <= thesis.gate3_score < 14:
+        return QueueReasoningSignal(
+            ticker=ticker,
+            reason='CONSENSUS_CONVERGING',
+            action='MONITOR',
+            confidence='LOW',
+            note=f'Gate 3 score {thesis.gate3_score} approaching consensus threshold (14); asymmetry weakening.'
+        )
+    return None
 
 
 def build_thesis_signal_map(sentinel_records: Dict[str, object]) -> Dict[str, ThesisSignal]:
@@ -56,26 +112,37 @@ def _summarize_alerts_by_ticker(cdm_alerts: List[CdmAlert]) -> Dict[str, List[Cd
     return out
 
 
-def _infer_consensus_vs_asymmetry(ticker: str, thesis: Optional[ThesisSignal]) -> Optional[QueueReasoningSignal]:
+def _infer_consensus_vs_asymmetry(ticker: str, thesis: Optional[ThesisSignal],
+                                  tdc_state: Optional[TdcTickerState] = None) -> Optional[QueueReasoningSignal]:
     t = ticker.upper()
-    if t in CONSENSUS_PRICED_HINTS:
-        action = 'HOLD' if t == 'VRT' else 'REMOVE'
+    overrides = _load_consensus_overrides()
+    consensus_hints = overrides.get('consensus_priced', {})
+    preconsensus_hints = overrides.get('preconsensus', {})
+    action_overrides = overrides.get('consensus_action_overrides', {})
+
+    if t in consensus_hints:
+        action = action_overrides.get(t, 'REMOVE')
         return QueueReasoningSignal(
             ticker=t,
             reason='CONSENSUS_PRICED',
             action=action,
             confidence='MEDIUM',
-            note=CONSENSUS_PRICED_HINTS[t]
+            note=consensus_hints[t]
         )
 
-    if t in PRECONSENSUS_HINTS:
+    if t in preconsensus_hints:
         return QueueReasoningSignal(
             ticker=t,
             reason='ASYMMETRY_RETAINED',
             action='KEEP',
             confidence='MEDIUM',
-            note=PRECONSENSUS_HINTS[t]
+            note=preconsensus_hints[t]
         )
+
+    # Live TIS-derived consensus convergence detection
+    tis_signal = _detect_tis_consensus(t, thesis, tdc_state)
+    if tis_signal:
+        return tis_signal
 
     if thesis and thesis.gate3_score is not None:
         if thesis.gate3_score < 14:
@@ -124,13 +191,14 @@ def derive_queue_reasoning_signals(
         ticker_alerts = alerts_by_ticker.get(t, [])
         tdc_state = tdc_state_by_ticker.get(t)
 
-        if t in KNOWN_SENTINEL_UNCONFIRMED:
+        # Live SENTINEL-unconfirmed check (replaces hardcoded set)
+        if _is_sentinel_unconfirmed(t, thesis):
             out[t] = QueueReasoningSignal(
                 ticker=t,
                 reason='SENTINEL_UNCONFIRMED',
                 action='REMOVE',
                 confidence='HIGH',
-                note='Ticker is explicitly treated as unconfirmed until a valid SENTINEL passage exists.'
+                note=f'Ticker has no confirmed SENTINEL passage (status={thesis.thesis_status if thesis else "MISSING"}).'
             )
             continue
 
@@ -141,16 +209,6 @@ def derive_queue_reasoning_signals(
                 action='EVAL_ONLY',
                 confidence='HIGH',
                 note='Ticker is treated as eval-only in current governance posture.'
-            )
-            continue
-
-        if thesis and thesis.thesis_status in {'REJECTED', 'RETIRED'}:
-            out[t] = QueueReasoningSignal(
-                ticker=t,
-                reason='SENTINEL_UNCONFIRMED',
-                action='REMOVE',
-                confidence='HIGH',
-                note=f'Thesis status is {thesis.thesis_status}.'
             )
             continue
 
@@ -185,7 +243,7 @@ def derive_queue_reasoning_signals(
             )
             continue
 
-        asymmetry_signal = _infer_consensus_vs_asymmetry(t, thesis)
+        asymmetry_signal = _infer_consensus_vs_asymmetry(t, thesis, tdc_state)
         if asymmetry_signal:
             out[t] = asymmetry_signal
             continue

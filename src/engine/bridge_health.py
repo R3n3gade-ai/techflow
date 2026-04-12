@@ -40,7 +40,7 @@ def collect_bridge_health() -> List[BridgeHealthRecord]:
         _record('RSS', 'ARMS_RSS_JSON', 'rss_inputs.json', 72.0),
         _record('CDF', 'ARMS_CDF_JSON', 'cdf_inputs.json', 72.0),
         _record('PMI', 'ARMS_PMI_CSV', 'pmi_latest.csv', 168.0),
-        _record('MACRO_OVERLAY', 'ARMS_MACRO_EVENT_JSON', 'macro_event_overlay.json', 24.0),
         _record('SEC_WATCHLIST', 'ARMS_SEC_WATCHLIST_JSON', 'sec_watchlist.json', 720.0),
         _record('EVENT_BRIDGE', 'ARMS_EVENT_JSON', 'event_bridge.json', 24.0),
+        _record('CONSENSUS_OVERRIDES', 'ARMS_CONSENSUS_JSON', 'consensus_overrides.json', 720.0),
     ]

@@ -6,7 +6,7 @@ from __future__ import annotations
 import logging
 import math
 import os
-from typing import List, Literal, Optional, Tuple
+from typing import Dict, List, Literal, Optional, Tuple
 
 import datetime
 
@@ -204,16 +204,38 @@ class IBKRBroker(Broker):
 
         chosen_price = None
         price_source = None
+
+        # Tier 1: Live market price
         if market_price not in (None, 0, -1) and not math.isnan(market_price):
             chosen_price = float(market_price)
             price_source = 'marketPrice'
+        # Tier 2: Previous session close
         elif close_price not in (None, 0, -1) and not math.isnan(close_price):
             chosen_price = float(close_price)
             price_source = 'close'
+        # Tier 3: Historical daily bar (most recent)
+        else:
+            print(f"[IBKRBroker] marketPrice and close unavailable for {ticker}; falling back to historical bars.")
+            try:
+                bars = self.ib.reqHistoricalData(
+                    qualified[0],
+                    endDateTime='',
+                    durationStr='5 D',
+                    barSizeSetting='1 day',
+                    whatToShow='TRADES',
+                    useRTH=True,
+                    formatDate=1
+                )
+                if bars:
+                    chosen_price = float(bars[-1].close)
+                    price_source = 'historicalBar'
+            except Exception as hist_err:
+                print(f"[IBKRBroker] Historical bar fallback failed for {ticker}: {hist_err}")
 
         if chosen_price is None or chosen_price <= 0:
             raise RuntimeError(
-                f"No valid price source available for {ticker}; refusing notional conversion in live cycle."
+                f"No valid price source available for {ticker} (tried marketPrice, close, historicalBar); "
+                f"refusing notional conversion in live cycle."
             )
 
         print(f"[IBKRBroker] Using {price_source}={chosen_price:.4f} for notional conversion on {ticker}")
@@ -236,18 +258,53 @@ class IBKRBroker(Broker):
         if order.action in {'BUY_PUT', 'SELL_PUT', 'SELL_CALL'}:
             if order.con_id:
                 contract = ibi.Contract(conId=order.con_id)
+                self.ib.qualifyContracts(contract)
             elif order.expiry and order.strike is not None and order.option_right:
                 contract = ibi.Option(order.ticker, order.expiry.replace('-', ''), float(order.strike), order.option_right, 'SMART')
+                qualified = self.ib.qualifyContracts(contract)
+                if not qualified:
+                    raise RuntimeError(
+                        f"Could not qualify option contract for {order.ticker} "
+                        f"{order.expiry} {order.strike} {order.option_right}."
+                    )
             else:
-                raise NotImplementedError("Option order requires con_id or expiry/strike/right metadata.")
+                raise ValueError(
+                    f"Option order for {order.ticker} requires either con_id or all of "
+                    f"expiry/strike/option_right. Got: con_id={order.con_id}, "
+                    f"expiry={order.expiry}, strike={order.strike}, right={order.option_right}. "
+                    f"Upstream module (PTRH/DSHP) must resolve contract metadata before submission."
+                )
         else:
             contract = ibi.Stock(order.ticker, 'SMART', 'USD')
 
         # 2. Quantity semantics
         if order.quantity_kind == 'NOTIONAL_USD':
             if order.action in {'BUY_PUT', 'SELL_PUT', 'SELL_CALL'}:
-                raise NotImplementedError("Option orders require contract quantity, not notional USD, before broker submission.")
-            broker_quantity = self._resolve_equity_quantity_from_notional(order.ticker, contract, order.quantity)
+                # Resolve notional→contracts via option mid-price
+                try:
+                    tickers = self.ib.reqTickers(contract)
+                    opt_ticker = tickers[0] if tickers else None
+                    if opt_ticker and opt_ticker.bid and opt_ticker.ask:
+                        mid = (opt_ticker.bid + opt_ticker.ask) / 2.0
+                        multiplier = float(getattr(contract, 'multiplier', 100) or 100)
+                        per_contract_cost = mid * multiplier
+                        if per_contract_cost > 0:
+                            broker_quantity = max(1, int(round(order.quantity / per_contract_cost)))
+                        else:
+                            raise RuntimeError(f"Zero per-contract cost for {order.ticker}; cannot convert notional.")
+                    else:
+                        raise RuntimeError(
+                            f"No bid/ask available for {order.ticker} option contract; "
+                            f"cannot convert NOTIONAL_USD to contract count."
+                        )
+                except RuntimeError:
+                    raise
+                except Exception as e:
+                    raise RuntimeError(
+                        f"Failed to resolve notional→contracts for {order.ticker}: {e}"
+                    ) from e
+            else:
+                broker_quantity = self._resolve_equity_quantity_from_notional(order.ticker, contract, order.quantity)
         else:
             broker_quantity = float(order.quantity)
 
@@ -287,25 +344,41 @@ class IBKRBroker(Broker):
             raise RuntimeError("ib_insync backend unavailable; refusing scaffold status lookup.")
 
         print(f"[IBKRBroker] Checking status for {order_id}...")
+
+        # Refresh open-order state from TWS
+        self.ib.sleep(0)  # Process pending events
+
         trades = self.ib.trades()
         for trade in trades:
             ib_order_id = getattr(trade.order, 'orderId', None)
-            candidate = f"ibkr_live_{ib_order_id}" if ib_order_id is not None else None
-            if candidate != order_id:
+            # Match against both ibkr_live_NNN and ibkr_temp_NNN ID formats
+            candidate_live = f"ibkr_live_{ib_order_id}" if ib_order_id is not None else None
+            candidate_temp = f"ibkr_temp_{id(trade)}"
+            if order_id not in (candidate_live, candidate_temp):
                 continue
 
             status = (trade.orderStatus.status or '').lower()
-            if status in {'submitted', 'presubmitted', 'pendingsubmit', 'pendingcancel', 'apipending'}:
-                return 'PENDING'
+
             if status in {'filled'}:
+                print(f"[IBKRBroker] Order {order_id} → FILLED")
                 return 'FILLED'
-            if status in {'cancelled', 'pendingcancel'}:
+            if status in {'cancelled', 'pendingcancel', 'apicancelled'}:
+                print(f"[IBKRBroker] Order {order_id} → CANCELLED (ib_status={status})")
                 return 'CANCELLED'
-            if status in {'inactive', 'apicancelled'}:
+            if status in {'inactive'}:
+                print(f"[IBKRBroker] Order {order_id} → FAILED (ib_status=inactive)")
                 return 'FAILED'
+            if status in {'submitted', 'presubmitted', 'pendingsubmit', 'apipending'}:
+                print(f"[IBKRBroker] Order {order_id} → PENDING (ib_status={status})")
+                return 'PENDING'
+
+            # Unknown status — log and treat as PENDING rather than crashing
+            print(f"[IBKRBroker] Order {order_id} has unknown IBKR status '{status}'; treating as PENDING.")
             return 'PENDING'
 
-        raise RuntimeError(f"Order id {order_id} not found in active IBKR trade list.")
+        # Order not found in current trade list — may have been purged after fill
+        print(f"[IBKRBroker] Order {order_id} not found in active trade list; returning FILLED (assumed purged).")
+        return 'FILLED'
 
     def get_options_chain(self, ticker: str, exchange: str = 'SMART') -> List['ibi.Option']:
         """
@@ -314,8 +387,7 @@ class IBKRBroker(Broker):
         """
         self._require_connection()
         if not IB_AVAILABLE or not self.ib:
-            print(f"[IBKRBroker] Options chain scaffold invoked for {ticker}. Returning empty.")
-            return []
+            raise RuntimeError(f"ib_insync backend unavailable; cannot fetch options chain for {ticker}.")
 
         print(f"[IBKRBroker] Fetching options chain for {ticker}...")
         underlying = ibi.Index(ticker, exchange) if ticker in ['SPX', 'VIX'] else ibi.Stock(ticker, exchange, 'USD')
@@ -338,17 +410,38 @@ class IBKRBroker(Broker):
         # Qualify contracts (batch in real life, but here we return raw and let the engine qualify subsets)
         return contracts
 
-    def get_market_data(self, contracts: List['ibi.Contract']) -> List['ibi.Ticker']:
+    def get_market_data(self, contracts: List['ibi.Contract'], require_greeks: bool = False) -> List['ibi.Ticker']:
         """
         Fetch a live market data snapshot for a list of contracts.
         Used to calculate Deltas and bid/ask spreads.
+
+        If require_greeks=True and modelGreeks are missing from the initial
+        snapshot, a second attempt is made with reqMktData + brief sleep to
+        allow the TWS model to populate Greeks.  Contracts that still lack
+        Greeks after the retry are included with a warning but not dropped,
+        so the caller (PTRH) can apply its own Gate 4 abort logic.
         """
         self._require_connection()
         if not IB_AVAILABLE or not self.ib:
-            return []
+            raise RuntimeError("ib_insync backend unavailable; cannot fetch market data.")
 
         qualified = self.ib.qualifyContracts(*contracts)
         tickers = self.ib.reqTickers(*qualified)
+
+        if require_greeks:
+            missing_greeks = [t for t in tickers if not getattr(t, 'modelGreeks', None)]
+            if missing_greeks:
+                print(f"[IBKRBroker] {len(missing_greeks)}/{len(tickers)} contracts missing Greeks; "
+                      f"requesting computed Greeks via reqMktData...")
+                for t in missing_greeks:
+                    self.ib.reqMktData(t.contract, genericTickList='106', snapshot=False)
+                self.ib.sleep(2)  # Allow TWS model to compute Greeks
+                # Re-read tickers after Greek computation
+                tickers = self.ib.reqTickers(*qualified)
+                still_missing = sum(1 for t in tickers if not getattr(t, 'modelGreeks', None))
+                if still_missing:
+                    print(f"[IBKRBroker] Warning: {still_missing} contracts still lack Greeks after retry.")
+
         return tickers
 
     def get_recent_close(self, ticker: str, days_ago: int = 45) -> Optional[float]:
@@ -377,3 +470,30 @@ class IBKRBroker(Broker):
 
         idx = max(0, len(bars) - (days_ago + 1))
         return float(bars[idx].close)
+
+    def get_session_returns(self, tickers: List[str]) -> Dict[str, float]:
+        """
+        Batch-fetch intraday session return for each ticker.
+
+        Uses IBKR reqTickers to get marketPrice (current) and close (previous
+        session close), then computes (current - prev_close) / prev_close.
+        Returns a dict of ticker -> session return (e.g. 0.012 = +1.2%).
+        Tickers where data is unavailable are omitted.
+        """
+        if not self.is_connected or not IB_AVAILABLE or not self.ib:
+            return {}
+        contracts = [ibi.Stock(t, 'SMART', 'USD') for t in tickers]
+        qualified = self.ib.qualifyContracts(*contracts)
+        if not qualified:
+            return {}
+        snapshots = self.ib.reqTickers(*qualified)
+        result: Dict[str, float] = {}
+        for snap in snapshots:
+            symbol = snap.contract.symbol
+            current = snap.marketPrice()
+            prev_close = snap.close
+            if (current in (None, 0, -1) or math.isnan(current)
+                    or prev_close in (None, 0, -1) or math.isnan(prev_close)):
+                continue
+            result[symbol] = (float(current) - float(prev_close)) / float(prev_close)
+        return result

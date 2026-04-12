@@ -1,3 +1,5 @@
+> **DUPLICATE** � Canonical version: Addendum_2_ARMS_Module_Spec_CDM_TDC_v1.0.md
+
 ARMS Module Specification — CDM + TDC | Addendum 2 to FSD v1.1 | CONFIDENTIAL
 Achelion Capital Management, LLC · Flow. Illumination. Discipline. Conviction. 1
 ACHELION CAPITAL MANAGEMENT, LLC

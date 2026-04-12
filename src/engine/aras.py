@@ -27,7 +27,7 @@ def calculate_aras_ceiling(regime_score: float) -> ArasOutput:
         ceiling = 1.00 # 100%
     elif regime_score <= 0.65:
         regime = "NEUTRAL"
-        ceiling = 0.80 # 80% (or 60% depending on sub-tier, standard is 80)
+        ceiling = 0.75 # 75%
     elif regime_score <= 0.80:
         regime = "DEFENSIVE"
         ceiling = 0.40 # 40%

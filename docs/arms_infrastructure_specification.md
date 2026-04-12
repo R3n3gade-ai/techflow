@@ -1,3 +1,5 @@
+> **DUPLICATE** � Canonical version: ARMS_Infrastructure_Specification_v1.0.md
+
 ACHELION ARMS Infrastructure Specification — Monitor Layout + Mac Mini Architecture | CONFIDENTIAL
 Achelion Capital Management, LLC · Flow. Illumination. Discipline. Conviction. 1
 ACHELION CAPITAL MANAGEMENT, LLC

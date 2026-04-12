@@ -14,12 +14,15 @@ Reference: ARMS Module Specification — CDM + TDC | Addendum 2 to FSD v1.1
 """
 
 import datetime
-from dataclasses import dataclass, field
+import json
+import os
+from dataclasses import dataclass, field, asdict
 from typing import List, Dict, Literal
 
 # --- Internal Imports ---
 from config.position_dependency_map import POSITION_DEPENDENCIES, ALERT_SENSITIVITY_MAPPING
 from reporting.audit_log import SessionLogEntry, append_to_log
+from engine.bridge_paths import bridge_path
 
 # --- Data Structures ---
 
@@ -132,7 +135,33 @@ def run_cdm_scan(news_items: List[NewsItem]) -> List[CdmAlert]:
                     
                     print(f"[CDM] Alert Generated: {ticker} <-- {entity} ({item.event_type})")
 
+    # Persist CDM alerts to queryable JSONL log
+    _persist_cdm_alerts(all_alerts)
+
     return all_alerts
+
+
+CDM_ALERT_LOG_PATH = bridge_path('ARMS_CDM_ALERT_LOG', 'cdm_alert_log.jsonl')
+
+
+def _persist_cdm_alerts(alerts: List[CdmAlert]) -> None:
+    """Append CDM alerts to a persistent JSONL log for auditability."""
+    if not alerts:
+        return
+    os.makedirs(os.path.dirname(CDM_ALERT_LOG_PATH), exist_ok=True)
+    with open(CDM_ALERT_LOG_PATH, 'a', encoding='utf-8') as f:
+        for alert in alerts:
+            entry = {
+                'ticker': alert.ticker,
+                'triggering_entity': alert.triggering_entity,
+                'event_type': alert.event_type,
+                'severity': alert.severity,
+                'headline': alert.headline,
+                'timestamp': alert.timestamp,
+                'source': alert.source_item.source if alert.source_item else 'UNKNOWN',
+            }
+            f.write(json.dumps(entry) + '\n')
+    print(f"[CDM] {len(alerts)} alert(s) persisted to {CDM_ALERT_LOG_PATH}")
 
 if __name__ == '__main__':
     print("ARMS CDM Module Active (Simulation Mode)")

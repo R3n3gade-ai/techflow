@@ -14,7 +14,7 @@ Reference: Daily Monitor Section 4 (Deployment Queue)
 import json
 import os
 from dataclasses import dataclass
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Literal
 from engine.aras import ArasOutput
 from reporting.audit_log import SessionLogEntry, append_to_log
 from execution.order_request import OrderRequest
@@ -27,7 +27,7 @@ class StrategicQueueItem:
     execution_instruction: str
     trigger_condition_type: str # 'REGIME_SCORE', 'PRICE', 'EVENT'
     trigger_threshold: float
-    status: str # 'DORMANT', 'WATCH', 'TRIGGERED', 'EXECUTED'
+    status: Literal['DORMANT', 'WATCH', 'TRIGGERED', 'EXECUTED']
     
     def evaluate(self, current_aras: ArasOutput) -> bool:
         """Returns True if the order should fire based on current ARAS state."""
@@ -99,9 +99,9 @@ class StrategicQueueManager:
                         priority=2,
                         triggering_module='STRATEGIC_QUEUE',
                         triggering_signal=item.execution_instruction,
-                        tier=0, # Fires automatically per spec once triggered
-                        confirmation_required=False,
-                        veto_window_hours=0.0
+                        tier=1, # FSD spec: ARES re-entry = Tier 1 with 2-hour PM veto
+                        confirmation_required=True,
+                        veto_window_hours=2.0
                     ))
                 elif current_aras.score <= (item.trigger_threshold + 0.10):
                     item.status = 'WATCH'

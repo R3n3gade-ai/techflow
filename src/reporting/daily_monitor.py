@@ -33,6 +33,12 @@ class QueueItem:
     notes: str = ''
 
 @dataclass
+class MonitorItem:
+    ticker: str
+    reeval_trigger: str
+    rationale: str
+
+@dataclass
 class DefensiveSleeveItem:
     ticker: str
     weight: float
@@ -62,7 +68,7 @@ class DailyMonitorV4:
     equity_book: List[EquityPosition]
     deployment_queue: List[QueueItem]
     removed_queue_items: List[QueueItem]
-    monitor_list: List[QueueItem]
+    monitor_list: List[MonitorItem]
     defensive_sleeve: List[DefensiveSleeveItem]
     
     module_status: Dict[str, Dict[str, str]]
@@ -111,15 +117,14 @@ class DailyMonitorRenderer:
             response_json = response_json[3:-3].strip()
             
         try:
-            return json.loads(response_json)
+            parsed = json.loads(response_json)
         except json.JSONDecodeError as e:
-            print(f"[DailyMonitor] ERROR: Failed to parse LLM synthesis. {e}")
-            return {
-                "header_blurb": "INTELLIGENCE SYNTHESIS FAILED",
-                "executive_summary": "Failed to synthesize market context.",
-                "key_developments": [],
-                "pm_decision_queue": ["1. Investigate LLM failure."]
-            }
+            raise RuntimeError(f"[DailyMonitor] LLM synthesis returned unparseable JSON: {e}\nRaw response (first 500 chars): {response_json[:500]}")
+        required_keys = {'header_blurb', 'executive_summary', 'key_developments', 'pm_decision_queue'}
+        missing = required_keys - set(parsed.keys())
+        if missing:
+            raise RuntimeError(f"[DailyMonitor] LLM synthesis missing required keys: {missing}")
+        return parsed
 
     def render_markdown(self, monitor: DailyMonitorV4) -> str:
         score_diff = monitor.score - monitor.macro_compass_score_yesterday
@@ -188,10 +193,10 @@ class DailyMonitorRenderer:
 
         if monitor.monitor_list:
             md += "\n**Monitor List**\n\n"
-            md += "| Ticker | Target | Execution Instruction | Status | Notes |\n"
-            md += "| :--- | :--- | :--- | :--- | :--- |\n"
+            md += "| Ticker | Re-Eval Trigger | Rationale |\n"
+            md += "| :--- | :--- | :--- |\n"
             for q in monitor.monitor_list:
-                md += f"| {q.ticker} | {q.target} | {q.execution_instruction} | {q.status} | {q.notes} |\n"
+                md += f"| {q.ticker} | {q.reeval_trigger} | {q.rationale} |\n"
 
         md += "\n---\n### 6 · DEFENSIVE SLEEVE + PTRH + CASH\n\n"
         for slv in monitor.defensive_sleeve:
@@ -230,7 +235,7 @@ def run_daily_monitor(raw_inputs: Dict[str, Any], market_context: str) -> str:
         equity_book=[EquityPosition(**eq) for eq in raw_inputs.get('equity_book', [])],
         deployment_queue=[QueueItem(**q) for q in raw_inputs.get('deployment_queue', [])],
         removed_queue_items=[QueueItem(**q) for q in raw_inputs.get('removed_queue_items', [])],
-        monitor_list=[QueueItem(**q) for q in raw_inputs.get('monitor_list', [])],
+        monitor_list=[MonitorItem(**m) for m in raw_inputs.get('monitor_list', [])],
         defensive_sleeve=[DefensiveSleeveItem(**s) for s in raw_inputs.get('defensive_sleeve', [])],
         module_status=raw_inputs.get('module_status', {})
     )

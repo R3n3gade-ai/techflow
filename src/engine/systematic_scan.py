@@ -46,11 +46,24 @@ def _fetch_documents(ticker: str) -> str:
 
 def _calculate_gate3_score(ticker: str) -> float:
     """
-    Placeholder: Calculates the quantitative Gate 3 mispricing score (0-30).
-    Based on valuation gap, institutional positioning, and consensus framing.
+    Calculates the quantitative Gate 3 mispricing score (0-30).
+    Base score of 15 (neutral midpoint) adjusted by Phase 2
+    anticipatory signals (ELVT, JPVI, PFVT, SCCR).
+
+    The supplementary adjustment range is [-5, +5], applied to the
+    base score and clamped to [0, 30].
     """
-    # In production, this would pull from the DataPipeline (F1/F4)
-    return 18.5 # Example score
+    from intelligence.gate3_supplementary import calculate_gate3_supplementary
+
+    base_score = 15.0  # Neutral midpoint — no valuation data yet
+    supplementary = calculate_gate3_supplementary(ticker)
+    adjusted = base_score + supplementary.adjustment
+
+    if supplementary.signal_count > 0:
+        print(f"  [Gate3] {ticker}: base {base_score} + Phase 2 {supplementary.adjustment:+.2f} "
+              f"= {adjusted:.2f} ({supplementary.signal_count} signals)")
+
+    return max(0.0, min(30.0, adjusted))
 
 def run_weekly_scan() -> List[ScanCandidate]:
     """

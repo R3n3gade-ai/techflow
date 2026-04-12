@@ -33,7 +33,17 @@ def calculate_macro_regime_score(signals: List[SignalRecord], event_state: Optio
     - typed macro-event state (deterministic interim replacement for opaque LLM overlay)
     """
     if not signals:
-        return 0.50
+        raise RuntimeError(
+            "MacroCompass received empty signal pipeline. "
+            "Cannot compute regime score without live market data. "
+            "Check data feed connections (FRED, Binance, PMI)."
+        )
+
+    signal_types = {s.signal_type for s in signals}
+    required = {'VIX_INDEX', 'HY_CREDIT_SPREAD', 'PMI_NOWCAST', '10Y_TREASURY_YIELD'}
+    missing = required - signal_types
+    if missing:
+        print(f"[MacroCompass] WARNING: Missing signals {missing} — using defaults for those inputs.")
 
     vix = _extract_raw(signals, 'VIX_INDEX', 20.0)
     hy_spread = _extract_raw(signals, 'HY_CREDIT_SPREAD', 4.0)

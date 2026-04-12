@@ -1,3 +1,8 @@
+> **? STALE DOCUMENT — NOT AUTHORITATIVE**
+> This document predates significant code changes (April 2026 remediation cycle).
+> For current system truth, see: ARMS_NEXT_WAVE_COLD_TRUTH_AUDIT_2026-04-10.md
+> and ARMS_REMEDIATION_MASTER_PLAN_2026-04-10.md
+
 # Execution Hardening Status: COMPLETED SPRINT 4
 
 - Rebuilt the missing `OrderBook` execution layer (L5) which now implements the `Liquidity-Adjusted Execution Protocol (LAEP)`.

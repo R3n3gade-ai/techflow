@@ -13,9 +13,22 @@ output "ecs_cluster_name" {
 }
 
 output "rds_endpoint" {
-  value = module.rds.db_instance_endpoint
+  value     = module.rds.db_instance_endpoint
+  sensitive = true
 }
 
 output "redis_endpoint" {
   value = module.redis.cache_nodes
+}
+
+output "state_bucket" {
+  value = aws_s3_bucket.state_bucket.id
+}
+
+output "sns_alert_topic_arn" {
+  value = aws_sns_topic.arms_alerts.arn
+}
+
+output "cloudwatch_log_group" {
+  value = aws_cloudwatch_log_group.arms_logs.name
 }

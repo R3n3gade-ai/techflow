@@ -1,3 +1,5 @@
+> **DUPLICATE** � Canonical version: Addendum_1_ARMS_Module_Spec_PTRH_DSHP_v1.0.md
+
 ARMS Module Specification — PTRH Automation + DSHP | Addendum to FSD v1.1 | CONFIDENTIAL
 Achelion Capital Management, LLC · Flow. Illumination. Discipline. Conviction. 1
 ACHELION CAPITAL MANAGEMENT, LLC

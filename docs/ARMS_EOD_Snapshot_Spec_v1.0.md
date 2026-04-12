@@ -1,3 +1,8 @@
+> **? STALE DOCUMENT — NOT AUTHORITATIVE**
+> This document predates significant code changes (April 2026 remediation cycle).
+> For current system truth, see: ARMS_NEXT_WAVE_COLD_TRUTH_AUDIT_2026-04-10.md
+> and ARMS_REMEDIATION_MASTER_PLAN_2026-04-10.md
+
 ARMS End-of-Day Snapshot Specification | Addendum to Infrastructure Spec v1.0 | CONFIDENTIAL
 Achelion Capital Management, LLC Â· Flow. Illumination. Discipline. Conviction. 1
 ACHELION CAPITAL MANAGEMENT, LLC

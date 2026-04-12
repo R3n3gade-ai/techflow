@@ -106,9 +106,23 @@ class ConvictionCalibrationModule:
 
     def _save_calibration(self, factor: CalibrationFactor):
         """Saves result to a JSON config for live engine consumption."""
-        config_path = "achelion_arms/src/config/calibration_state.json"
+        config_path = "achelion_arms/state/calibration_state.json"
+        os.makedirs(os.path.dirname(config_path), exist_ok=True)
+
+        # Preserve first_calibrated_at across runs
+        existing = {}
+        if os.path.exists(config_path):
+            with open(config_path, 'r') as f:
+                existing = json.load(f)
+
+        data = factor.__dict__.copy()
+        data['calibrated_at'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        data['first_calibrated_at'] = existing.get(
+            'first_calibrated_at', data['calibrated_at']
+        )
+
         with open(config_path, 'w') as f:
-            json.dump(factor.__dict__, f, indent=4)
+            json.dump(data, f, indent=4)
 
 if __name__ == '__main__':
     print("ARMS CCM Module Active (Simulation Mode)")

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
-from typing import Dict, List, Literal, Optional
+from typing import Dict, List, Literal, Optional, Set
 
 from execution.queue_reasoning import QueueReasoningSignal
 
@@ -26,10 +27,49 @@ QueueReason = Literal[
     'REGIME_NOT_CLEARED',
     'RISK_ON_EVAL_ONLY',
     'THESIS_MONITOR_ONLY',
+    'PM_OVERRIDE',
     'UNKNOWN'
 ]
 
 QueueLane = Literal['NEUTRAL', 'RISK_ON', 'MONITOR']
+
+
+# ─── State Machine: Valid Transitions ──────────────────────────────────────────
+# Key = current state, Value = set of valid next states.
+# 'ABSENT' is a synthetic state for tickers newly entering the queue.
+VALID_TRANSITIONS: Dict[str, Set[str]] = {
+    'ABSENT':              {'LOCKED', 'WATCH', 'EVAL_ONLY', 'MONITOR_LIST', 'REMOVED'},
+    'LOCKED':              {'WATCH', 'TRIGGERED', 'EVAL_ONLY', 'REMOVED', 'MONITOR_LIST', 'LOCKED'},
+    'WATCH':               {'TRIGGERED', 'LOCKED', 'EVAL_ONLY', 'REMOVED', 'MONITOR_LIST', 'WATCH'},
+    'TRIGGERED':           {'LOCKED', 'WATCH', 'HOLD_CURRENT_WEIGHT', 'REMOVED', 'TRIGGERED'},
+    'EVAL_ONLY':           {'WATCH', 'LOCKED', 'TRIGGERED', 'REMOVED', 'MONITOR_LIST', 'EVAL_ONLY'},
+    'HOLD_CURRENT_WEIGHT': {'EVAL_ONLY', 'REMOVED', 'MONITOR_LIST', 'WATCH', 'HOLD_CURRENT_WEIGHT'},
+    'REMOVED':             {'LOCKED', 'WATCH', 'REMOVED'},  # Re-entry requires going back to LOCKED/WATCH
+    'MONITOR_LIST':        {'LOCKED', 'WATCH', 'EVAL_ONLY', 'REMOVED', 'MONITOR_LIST'},
+    'UNLOCKED':            {'LOCKED', 'WATCH', 'TRIGGERED', 'UNLOCKED'},
+}
+
+logger = logging.getLogger('arms.queue_governance')
+
+
+def validate_transition(ticker: str, old_state: str, new_state: str) -> bool:
+    """
+    Returns True if the transition is valid per the state machine.
+    Logs a warning for invalid transitions but does NOT block them —
+    the system is in hardening phase and blocking could halt the cycle.
+    """
+    valid_set = VALID_TRANSITIONS.get(old_state, set())
+    if new_state not in valid_set:
+        logger.warning(
+            f"[QueueGovernance] INVALID TRANSITION for {ticker}: "
+            f"{old_state} -> {new_state}. Valid targets from {old_state}: {sorted(valid_set)}"
+        )
+        print(
+            f"[QueueGovernance] WARNING: Invalid state transition for {ticker}: "
+            f"{old_state} -> {new_state}"
+        )
+        return False
+    return True
 
 
 @dataclass

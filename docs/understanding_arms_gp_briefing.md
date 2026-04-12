@@ -1,3 +1,5 @@
+> **DUPLICATE** � Canonical version: understanding_arms_gp_briefing_updated.md
+
 Understanding ARMS — General Partner Briefing · Achelion Capital Management, LLC · CONFIDENTIAL
 Achelion Capital Management, LLC · For General Partners Only · Not for Distribution 1
 ACHELION CAPITAL MANAGEMENT, LLC

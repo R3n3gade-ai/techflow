@@ -39,16 +39,23 @@ def get_regime_table_minimum(regime_score: float) -> float:
     Returns the minimum required coverage percentage based on the regime table.
     This acts as a floor for the CAM calculation.
     
-    Reference: ARMS Module Specification — PTRH Automation + DSHP, Section 1.2
+    PTRH regime multiplier table (CLAUDE.md v4.0):
+      RISK_ON  (<0.30): 1.0× base = 1.2% NAV
+      WATCH    (0.30-0.50): 1.25× base = 1.5% NAV
+      NEUTRAL  (0.51-0.65): 1.25× base = 1.5% NAV
+      DEFENSIVE(0.66-0.80): 1.5× base = 1.8% NAV
+      CRASH    (>0.80): 2.0× base = 2.4% NAV
     """
-    if regime_score <= 0.50: # RISK_ON, WATCH
-        return 0.012 # 1.2%
-    elif regime_score <= 0.65: # NEUTRAL
-        return 0.015 # 1.5%
-    elif regime_score <= 0.80: # DEFENSIVE
-        return 0.018 # 1.8%
-    else: # CRASH
-        return 0.024 # 2.4%
+    if regime_score < 0.30:  # RISK_ON
+        return 0.012  # 1.2%
+    elif regime_score <= 0.50:  # WATCH
+        return 0.015  # 1.5%
+    elif regime_score <= 0.65:  # NEUTRAL
+        return 0.015  # 1.5%
+    elif regime_score <= 0.80:  # DEFENSIVE
+        return 0.018  # 1.8%
+    else:  # CRASH
+        return 0.024  # 2.4%
 
 def calculate_required_notional(inputs: CamInputs) -> float:
     """

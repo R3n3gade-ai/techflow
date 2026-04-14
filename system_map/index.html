@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ACHELION ARMS v4.0 — System Architecture Map</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0a0e1a;--surface:#111827;--surface2:#1a2236;--border:#1e293b;
+  --accent:#3b82f6;--accent2:#06b6d4;--green:#10b981;--yellow:#f59e0b;
+  --red:#ef4444;--purple:#8b5cf6;--orange:#f97316;--pink:#ec4899;
+  --text:#e2e8f0;--text2:#94a3b8;--text3:#64748b;
+}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);overflow-x:hidden}
+a{color:var(--accent);text-decoration:none}
+
+/* ── Top Bar ── */
+.topbar{position:fixed;top:0;left:0;right:0;height:56px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 24px;z-index:100}
+.topbar h1{font-size:15px;font-weight:600;letter-spacing:.5px}
+.topbar h1 span{color:var(--accent2);font-weight:700}
+.topbar-stats{display:flex;gap:16px;font-size:12px;color:var(--text2)}
+.topbar-stats .stat{display:flex;align-items:center;gap:5px}
+.topbar-stats .dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+.dot-neutral{background:var(--text3)}.dot-progress{background:var(--yellow)}.dot-complete{background:var(--green)}
+.topbar-right{display:flex;gap:12px;align-items:center}
+.legend-btn{background:var(--surface2);border:1px solid var(--border);color:var(--text2);padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px}
+.legend-btn:hover{border-color:var(--accent);color:var(--text)}
+
+/* ── Canvas ── */
+.canvas{padding:72px 20px 40px;min-height:100vh;position:relative}
+.canvas-inner{max-width:1400px;margin:0 auto}
+
+/* ── Layer Headers ── */
+.layer{margin-bottom:32px}
+.layer-header{display:flex;align-items:center;gap:10px;margin-bottom:14px;padding-left:4px}
+.layer-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--text3)}
+.layer-line{flex:1;height:1px;background:var(--border)}
+.layer-tag{font-size:10px;padding:2px 8px;border-radius:4px;font-weight:600}
+
+/* ── Nodes ── */
+.node-grid{display:flex;flex-wrap:wrap;gap:12px}
+.node{
+  position:relative;width:175px;padding:14px 14px 12px;
+  background:var(--surface);border:1px solid var(--border);border-radius:10px;
+  cursor:pointer;transition:all .2s;
+}
+.node:hover{border-color:var(--accent);transform:translateY(-2px);box-shadow:0 4px 20px rgba(59,130,246,.15)}
+.node.active{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.node-icon{font-size:18px;margin-bottom:6px}
+.node-title{font-size:12px;font-weight:600;line-height:1.3;margin-bottom:4px}
+.node-sub{font-size:10px;color:var(--text3);line-height:1.3}
+.node-status{position:absolute;top:8px;right:8px;width:10px;height:10px;border-radius:50%;border:1.5px solid var(--border)}
+.node-status.neutral{background:transparent;border-color:var(--text3)}
+.node-status.in-progress{background:var(--yellow);border-color:var(--yellow)}
+.node-status.complete{background:var(--green);border-color:var(--green)}
+
+/* Category colors */
+.node.cat-infra{border-left:3px solid var(--purple)}
+.node.cat-data{border-left:3px solid var(--accent2)}
+.node.cat-regime{border-left:3px solid var(--accent)}
+.node.cat-risk{border-left:3px solid var(--red)}
+.node.cat-intel{border-left:3px solid var(--orange)}
+.node.cat-portfolio{border-left:3px solid var(--green)}
+.node.cat-hedge{border-left:3px solid var(--yellow)}
+.node.cat-execution{border-left:3px solid var(--pink)}
+.node.cat-reporting{border-left:3px solid #a78bfa}
+.node.cat-state{border-left:3px solid var(--text3)}
+.node.cat-simulation{border-left:3px solid var(--accent2)}
+
+/* ── Flow Arrows ── */
+.flow-arrow{text-align:center;padding:4px 0;color:var(--text3);font-size:18px;letter-spacing:4px}
+
+/* ── Slide Panel ── */
+.panel-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:200;opacity:0;pointer-events:none;transition:opacity .3s}
+.panel-overlay.open{opacity:1;pointer-events:all}
+.panel{
+  position:fixed;top:0;right:-480px;width:480px;height:100vh;
+  background:var(--surface);border-left:1px solid var(--border);
+  z-index:201;transition:right .35s cubic-bezier(.4,0,.2,1);
+  display:flex;flex-direction:column;overflow-y:auto;
+}
+.panel.open{right:0}
+.panel-top{padding:20px 24px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:flex-start}
+.panel-tags{display:flex;gap:8px;flex-wrap:wrap}
+.panel-tag{font-size:10px;font-weight:600;padding:3px 10px;border-radius:12px;background:var(--surface2);color:var(--text2);border:1px solid var(--border)}
+.panel-tag.t-infra{color:var(--purple);border-color:rgba(139,92,246,.3)}
+.panel-tag.t-data{color:var(--accent2);border-color:rgba(6,182,212,.3)}
+.panel-tag.t-regime{color:var(--accent);border-color:rgba(59,130,246,.3)}
+.panel-tag.t-risk{color:var(--red);border-color:rgba(239,68,68,.3)}
+.panel-tag.t-intel{color:var(--orange);border-color:rgba(249,115,22,.3)}
+.panel-tag.t-portfolio{color:var(--green);border-color:rgba(16,185,129,.3)}
+.panel-tag.t-hedge{color:var(--yellow);border-color:rgba(245,158,11,.3)}
+.panel-tag.t-execution{color:var(--pink);border-color:rgba(236,72,153,.3)}
+.panel-tag.t-reporting{color:#a78bfa;border-color:rgba(167,139,250,.3)}
+.panel-tag.t-state{color:var(--text3);border-color:var(--border)}
+.panel-tag.t-simulation{color:var(--accent2);border-color:rgba(6,182,212,.3)}
+.panel-status-tag{font-size:10px;font-weight:700;padding:3px 10px;border-radius:12px;text-transform:uppercase;letter-spacing:.5px}
+.panel-status-tag.s-neutral{background:var(--surface2);color:var(--text3)}
+.panel-status-tag.s-in-progress{background:rgba(245,158,11,.12);color:var(--yellow)}
+.panel-status-tag.s-complete{background:rgba(16,185,129,.12);color:var(--green)}
+.panel-close{background:none;border:none;color:var(--text3);font-size:22px;cursor:pointer;padding:4px;line-height:1}
+.panel-close:hover{color:var(--text)}
+
+.panel-body{padding:24px;flex:1}
+.panel-title{font-size:22px;font-weight:700;margin-bottom:6px;line-height:1.25}
+.panel-id{font-size:11px;color:var(--text3);font-family:'Courier New',monospace;background:var(--surface2);display:inline-block;padding:3px 10px;border-radius:4px;margin-bottom:20px}
+
+.panel-section{margin-bottom:24px}
+.panel-section-header{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--accent2);margin-bottom:8px}
+.panel-section-header svg{width:14px;height:14px}
+.panel-desc{font-size:13px;color:var(--text2);line-height:1.65}
+.panel-file{font-size:11px;color:var(--text3);font-family:'Courier New',monospace;margin-top:4px}
+
+/* Deps */
+.dep-list{list-style:none;display:flex;flex-wrap:wrap;gap:6px}
+.dep-list li{font-size:11px;padding:3px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text2);cursor:pointer}
+.dep-list li:hover{border-color:var(--accent);color:var(--text)}
+
+/* Status Buttons */
+.status-group{display:flex;gap:10px}
+.status-btn{
+  flex:1;padding:12px 8px;text-align:center;
+  background:var(--surface2);border:2px solid var(--border);border-radius:8px;
+  cursor:pointer;transition:all .2s;
+}
+.status-btn:hover{border-color:var(--text3)}
+.status-btn.selected{border-color:var(--accent)}
+.status-btn .sb-icon{font-size:18px;margin-bottom:4px}
+.status-btn .sb-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text2)}
+.status-btn.selected .sb-label{color:var(--text)}
+.status-btn.s-neutral.selected{border-color:var(--text3)}
+.status-btn.s-in-progress.selected{border-color:var(--yellow)}
+.status-btn.s-in-progress.selected .sb-icon{color:var(--yellow)}
+.status-btn.s-complete.selected{border-color:var(--green)}
+.status-btn.s-complete.selected .sb-icon{color:var(--green)}
+
+/* Notes */
+.notes-area{
+  width:100%;min-height:80px;padding:10px 14px;
+  background:var(--surface2);border:1px solid var(--border);border-radius:8px;
+  color:var(--text);font-size:12px;font-family:inherit;resize:vertical;line-height:1.5;
+}
+.notes-area:focus{outline:none;border-color:var(--accent)}
+.notes-area::placeholder{color:var(--text3)}
+
+/* ── Responsive ── */
+@media(max-width:900px){
+  .node{width:calc(50% - 8px)}
+  .panel{width:100%;right:-100%}
+}
+@media(max-width:500px){
+  .node{width:100%}
+}
+</style>
+</head>
+<body>
+
+<!-- Top Bar -->
+<div class="topbar">
+  <h1><span>ACHELION</span> ARMS v4.0 &mdash; System Architecture</h1>
+  <div class="topbar-stats" id="topStats">
+    <div class="stat"><span class="dot dot-complete"></span><span id="countComplete">0</span> Complete</div>
+    <div class="stat"><span class="dot dot-progress"></span><span id="countProgress">0</span> In Progress</div>
+    <div class="stat"><span class="dot dot-neutral"></span><span id="countNeutral">0</span> Neutral</div>
+  </div>
+</div>
+
+<!-- Slide Panel -->
+<div class="panel-overlay" id="panelOverlay"></div>
+<div class="panel" id="panel">
+  <div class="panel-top">
+    <div class="panel-tags" id="panelTags"></div>
+    <button class="panel-close" id="panelClose">&times;</button>
+  </div>
+  <div class="panel-body">
+    <h2 class="panel-title" id="panelTitle"></h2>
+    <div class="panel-id" id="panelId"></div>
+
+    <div class="panel-section">
+      <div class="panel-section-header">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+        WHAT IT DOES
+      </div>
+      <div class="panel-desc" id="panelDesc"></div>
+      <div class="panel-file" id="panelFile"></div>
+    </div>
+
+    <div class="panel-section" id="panelDepsSection">
+      <div class="panel-section-header">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+        CONNECTS TO
+      </div>
+      <ul class="dep-list" id="panelDeps"></ul>
+    </div>
+
+    <div class="panel-section">
+      <div class="panel-section-header">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        UPDATE IMPLEMENTATION STATUS
+      </div>
+      <div class="status-group" id="statusGroup">
+        <div class="status-btn s-neutral" data-status="neutral"><div class="sb-icon">&#9675;</div><div class="sb-label">Neutral</div></div>
+        <div class="status-btn s-in-progress" data-status="in-progress"><div class="sb-icon">&#9201;</div><div class="sb-label">In Progress</div></div>
+        <div class="status-btn s-complete" data-status="complete"><div class="sb-icon">&#9745;</div><div class="sb-label">Complete</div></div>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <div class="panel-section-header">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="8" y1="8" x2="16" y2="8"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="16" x2="12" y2="16"/></svg>
+        MANUAL IMPLEMENTATION NOTES
+      </div>
+      <textarea class="notes-area" id="panelNotes" placeholder="Add technical notes, blockers, or next steps for this component..."></textarea>
+    </div>
+  </div>
+</div>
+
+<!-- Main Canvas -->
+<div class="canvas">
+<div class="canvas-inner" id="canvasInner"></div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+// FULL ARMS NODE DEFINITIONS
+// ═══════════════════════════════════════════════════════════════
+const NODES = [
+  // ── INFRASTRUCTURE ──
+  {id:"aws_fargate",cat:"infra",title:"AWS Fargate / ECS",sub:"Compute Engine",desc:"Serverless container orchestration running the ARMS engine on a recurring 5-minute cadence during market hours. Scales automatically based on load. Hosts the main.py orchestrator process and all engine modules.",file:"infra/main.tf",deps:["redis_cache","postgres_rds"]},
+  {id:"postgres_rds",cat:"infra",title:"AWS RDS PostgreSQL",sub:"Relational Database",desc:"Persistent relational database storing position history, regime transitions, CDF state, TDC/TIS records, PDS high-water marks, and execution audit trails. Source of truth for all stateful data that survives across sessions.",file:"infra/main.tf",deps:[]},
+  {id:"redis_cache",cat:"infra",title:"Redis ElastiCache",sub:"Real-time State Cache",desc:"In-memory cache for sub-second access to current regime scores, live portfolio weights, ARAS hysteresis state, and inter-module communication during a single 5-minute cycle. Prevents redundant broker API calls.",file:"infra/main.tf",deps:[]},
+  {id:"llm_gateway",cat:"infra",title:"LLM API Gateway",sub:"Gemini / Claude",desc:"AI inference endpoint used by the Daily Monitor report generation, SENTINEL narrative analysis, and CDM entity extraction. Routes between Google Gemini and Anthropic Claude based on task complexity and latency requirements.",file:"src/reporting/daily_monitor.py",deps:["daily_monitor","sentinel"]},
+
+  // ── DATA SOURCES ──
+  {id:"market_prices",cat:"data",title:"Market Prices",sub:"Polygon.io / Alpaca",desc:"Real-time and delayed equity price feeds. Provides last sale, bid/ask, and OHLCV data for all portfolio holdings and watchlist securities. Primary source for NAV calculation and position P&L tracking.",file:"src/data_feeds/pipeline.py",deps:["data_pipeline"]},
+  {id:"fred_macro",cat:"data",title:"FRED Macro",sub:"Federal Reserve Data",desc:"Macroeconomic time series from the Federal Reserve — including Treasury yields (10Y, 2Y), high-yield credit spreads (HYG/LQD), PMI readings, and dollar index. Core inputs to the Macro Compass regime scoring engine.",file:"src/data_feeds/pipeline.py",deps:["data_pipeline"]},
+  {id:"sp_pmi",cat:"data",title:"S&P Global PMI",sub:"Manufacturing & Services",desc:"S&P Global Purchasing Managers' Index — a leading indicator of economic expansion/contraction. Feeds into the Macro Compass with 20% weight. Values above 50 indicate expansion; below 50 indicates contraction.",file:"src/data_feeds/pipeline.py",deps:["data_pipeline"]},
+  {id:"crypto_micro",cat:"data",title:"Crypto Micro",sub:"IBIT / ETHB / BSOL",desc:"Cryptocurrency ETF/ETP price feeds for the 20% crypto sleeve allocation. Tracks Bitcoin (IBIT), Ethereum (ETHB), and Solana (BSOL) exposure. Subject to LAEP crisis-mode forced liquidation ordering.",file:"src/data_feeds/pipeline.py",deps:["data_pipeline"]},
+  {id:"vix_options",cat:"data",title:"VIX & Options",sub:"CBOE Volatility Index",desc:"Real-time VIX level and VIX term structure (VIX/VIX3M ratio). Drives LAEP execution tier selection (5 tiers from NORMAL to CRISIS), CAM PTRH sizing decisions, and PERM covered call eligibility (VIX >= 18 required).",file:"src/data_feeds/pipeline.py",deps:["data_pipeline"]},
+  {id:"sec_edgar",cat:"data",title:"SEC Edgar",sub:"Form 4 Insider Filings",desc:"Automated scraping of SEC Form 4 insider transactions for all portfolio holdings. Insider selling patterns above threshold feed into CDM as conviction-impacting signals and can trigger TDC thesis review escalation.",file:"src/data_feeds/sec_edgar_feed.py",deps:["data_pipeline"]},
+  {id:"news_rss",cat:"data",title:"News RSS Feeds",sub:"Reuters / Bloomberg / AP",desc:"Real-time news wire monitoring via RSS feeds. Headlines and entity extraction feed into the Event Bridge for macro event overlay scoring and into SENTINEL/CDM for position-specific thesis impact assessment.",file:"src/data_feeds/news_rss_feed.py",deps:["data_pipeline"]},
+
+  // ── DATA AGGREGATION ──
+  {id:"data_pipeline",cat:"data",title:"L1 Ingestion Pipeline",sub:"Data Aggregator",desc:"Central data ingestion orchestrator. Runs all feed modules in sequence, normalizes output into standardized DataSignal objects, and validates that critical signals (VIX, HY_SPREAD) are present before allowing the cycle to proceed. First gate in the pipeline — fail here, nothing downstream runs.",file:"src/data_feeds/pipeline.py",deps:["macro_compass","event_bridge"]},
+  {id:"event_bridge",cat:"data",title:"Event Bridge",sub:"Macro Event Overlay",desc:"Aggregates news events, SEC filings, and manual PM event entries into a typed macro event state. Calculates an event-state override floor that can elevate the regime score when geopolitical or market-structural events warrant defensive posture regardless of quantitative signals.",file:"src/data_feeds/event_bridge.py",deps:["macro_compass"]},
+
+  // ── REGIME & SENTIMENT ──
+  {id:"macro_compass",cat:"regime",title:"Macro Compass",sub:"Regime Score (0.00-1.00)",desc:"The system's primary risk thermometer. Computes a single composite score from 0.00 (all-clear) to 1.00 (maximum stress) using weighted inputs: VIX 30%, HY Credit Spread 30%, PMI 20%, 10Y Treasury Yield 20%. This score flows into ARAS for regime classification with hysteresis.",file:"src/engine/macro_compass.py",deps:["aras"]},
+  {id:"aras",cat:"regime",title:"ARAS",sub:"Regime Assessment & Ceiling",desc:"Autonomous Regime Assessment System — highest authority on portfolio exposure. Converts the raw Macro Compass score into one of 5 regimes (RISK_ON / WATCH / NEUTRAL / DEFENSIVE / CRASH) with equity ceiling caps (100% / 100% / 75% / 40% / 15%). Implements ±0.05 hysteresis bands and 2-session NEUTRAL persistence to prevent regime whipsawing.",file:"src/engine/aras.py",deps:["master_engine","cam","slof","pds","strategic_queue"]},
+  {id:"rpe",cat:"regime",title:"RPE",sub:"Regime Probability Engine",desc:"Calculates transition probabilities between regimes using signal momentum. Estimates the likelihood of moving from current regime to each adjacent regime within the next 5-minute cycle. Feeds into ARES re-entry gating and AUP asymmetric upside calculations.",file:"src/engine/regime_probability.py",deps:["ares","aup"]},
+  {id:"rss_sentiment",cat:"regime",title:"MC-RSS",sub:"Retail Sentiment Score",desc:"Retail sentiment composite from four inputs: net retail buying flow, 30-day retail history, NAAIM exposure index, and AAII bull/bear spread. Contrarian indicator — extreme bullishness is bearish signal and vice versa. Feeds into ARES re-entry gating.",file:"src/engine/mc_rss.py",deps:["ares"]},
+
+  // ── RISK MODULES ──
+  {id:"pds",cat:"risk",title:"PDS",sub:"Portfolio Drawdown Sentinel",desc:"Continuous drawdown monitor with three escalation tiers measured from peak NAV. -8% WARNING: PM alert only, no auto-action. -12% AUTO: equity ceiling hard-capped at 60%. -18% AUTO: equity ceiling hard-capped at 30%, full de-risk sequence initiates. PDS ceiling overrides ARAS when more restrictive.",file:"src/engine/drawdown_sentinel.py",deps:["master_engine","laep"]},
+  {id:"fem",cat:"risk",title:"FEM",sub:"Factor Exposure Monitor",desc:"Monitors single-factor concentration across the equity book. WATCH threshold at 65% warns PM but allows orders. ALERT threshold at 80% blocks new orders in that factor until concentration normalizes. Runs pre-flight before every deployment and generates paired trims (Tier 0) after 24h sustained ALERT.",file:"src/engine/factor_exposure.py",deps:["paie","master_engine"]},
+  {id:"circuit_breaker",cat:"risk",title:"Circuit Breaker",sub:"Emergency Halt",desc:"Market-level circuit breaker monitoring SPX intraday moves and VIX spikes. When tripped, halts ALL autonomous execution — no orders submitted to broker regardless of module signals. The PM override safety valve for extreme market dislocations.",file:"src/execution/circuit_breaker.py",deps:["order_book"]},
+  {id:"ssl",cat:"risk",title:"SSL",sub:"Stress Scenario Library",desc:"Eight pre-defined macro stress scenarios: S1 Rate Shock, S2 Credit Event, S3 Geopolitical, S4 Liquidity Freeze, S5 Dollar Spike, S6 Energy Shock, S7 Tech Earnings Collapse, S8 Systemic Contagion. Pattern-matched against live signals at >70% confidence. Active scenarios drive CAM macro stress multiplier.",file:"src/modules/stress_scenarios.py",deps:["cam"]},
+  {id:"incap",cat:"risk",title:"Incapacitation",sub:"Dead Man's Switch",desc:"If no PM heartbeat is detected for a configurable period and regime is DEFENSIVE or worse, triggers automatic de-risk protocol. Ensures the system can protect capital even if the PM becomes unreachable during a crisis.",file:"src/engine/incapacitation.py",deps:[]},
+
+  // ── INTELLIGENCE ──
+  {id:"sentinel",cat:"intel",title:"SENTINEL",sub:"News & Event Intelligence",desc:"The system's eyes and ears. Ingests news events, SEC filings, and market developments, then routes them through entity extraction and impact scoring. Outputs structured records that feed MICS Gate 3 scoring, CDM thesis impact assessment, and strategic queue governance.",file:"src/engine/sentinel_workflow.py",deps:["cdm","mics"]},
+  {id:"cdm",cat:"intel",title:"CDM",sub:"Conviction Drift Monitor",desc:"Named-entity propagation engine. When a CDM event fires (e.g., NVDA earnings miss), it propagates across all positions sharing named entities — an NVDA miss affects AMD, AVGO, MU etc. Severity mapping from event type to conviction impact. Triggers TDC thesis review on material events.",file:"src/engine/cdm.py",deps:["tdc","cam"]},
+  {id:"tdc",cat:"intel",title:"TDC",sub:"Thesis Drift Checker",desc:"Evaluates thesis integrity for each position and assigns a TIS (Thesis Integrity Score): INTACT (8+), WATCH (6-7.9), IMPAIRED (4-5.9), BROKEN (<4). Weekly audit runs on all equity positions. BROKEN positions are candidates for thesis retirement (TRP) and covered call overwrite (PERM).",file:"src/engine/tdc.py",deps:["trp","perm"]},
+  {id:"cdf",cat:"intel",title:"CDF",sub:"Conviction Decay Function",desc:"Time-based conviction decay with three milestones: 45 days without PM thesis update auto-trims to 80%. 90 days auto-trims to 60%. 135 days triggers mandatory review. Also fires on 10pp underperformance gap. PM resets the clock with a single thesis confirmation click.",file:"src/engine/cdf.py",deps:["master_engine","perm"]},
+  {id:"trp",cat:"intel",title:"TRP",sub:"Thesis Retirement Protocol",desc:"Three-condition trigger for automated position exit: TIS BROKEN for 30 consecutive days + CDF multiplier at 0.60 or below + no PM thesis update in 45 days. All three must be true simultaneously. When triggered, generates Tier 0 liquidation orders. The system's way of saying 'the thesis is dead.'",file:"src/engine/thesis_retirement.py",deps:["perm"]},
+  {id:"jpvi",cat:"intel",title:"JPVI",sub:"Job Posting Velocity Index",desc:"Phase 2 Intelligence module. Weekly sweep of job posting velocity across portfolio company domains. Rising hiring patterns signal growth investment; sudden freezes signal potential earnings deterioration. Feeds into MICS Gate 3 supplementary scoring.",file:"src/intelligence/jpvi.py",deps:["mics"]},
+  {id:"sccr",cat:"intel",title:"SCCR",sub:"Supply Chain Cross-Reference",desc:"Phase 2 Intelligence module. Weekly scan of supply chain patterns — shipping data, component shortages, inventory builds. Cross-references portfolio holdings with supplier/customer networks for early warning of revenue disruptions.",file:"src/intelligence/sccr.py",deps:["mics"]},
+  {id:"elvt",cat:"intel",title:"ELVT",sub:"Earnings Leverage Tracker",desc:"Phase 2 Intelligence module. Quarterly sweep during earnings seasons (Jan/Apr/Jul/Oct). Tracks operating leverage changes — companies where small revenue beats produce outsized earnings beats, signaling thesis acceleration.",file:"src/intelligence/elvt.py",deps:["mics"]},
+  {id:"pfvt",cat:"intel",title:"PFVT",sub:"Patent Filing Velocity",desc:"Phase 2 Intelligence module. Monthly sweep of patent filing activity. Measures R&D output velocity as a leading indicator of competitive moat strength, particularly relevant for AI semiconductor and software positions.",file:"src/intelligence/pfvt.py",deps:["mics"]},
+
+  // ── PORTFOLIO CONSTRUCTION ──
+  {id:"mics",cat:"portfolio",title:"MICS",sub:"Multi-Input Conviction Score",desc:"The conviction scoring engine. Four weighted gates — Gate 1: Fundamental/Thesis (40%), Gate 2: Technical/Momentum (30%), Gate 3: Sentiment/Intelligence (15%), Gate 4: Macro/Regime (15%). Outputs a 1-10 conviction level per position that feeds into the Master Engine's C² weighting formula.",file:"src/engine/mics.py",deps:["master_engine"]},
+  {id:"master_engine",cat:"portfolio",title:"Master Engine",sub:"L4 Portfolio Construction",desc:"The portfolio's brain. Converts MICS conviction scores into Conviction-Squared (C²) target weights: weight = (MICS²) × CDF_decay / total_C². Scales by ARAS equity ceiling, applies SLOF leverage multiplier, and enforces Kevlar position limits. Architecture AB: 58% equity, 20% crypto, 14% defensive, 8% cash.",file:"src/engine/master_engine.py",deps:["kevlar","rebalance","paie"]},
+  {id:"cam",cat:"portfolio",title:"CAM",sub:"Coverage Adequacy Model",desc:"Autonomous PTRH sizer running every 5 minutes. Four multipliers: Regime Score (1.0 + regime_score), Equity Exposure (proportional to equity %), FEM Concentration (activates >65%), Macro Stress (1.0-2.0x from SSL). Base 1.2% NAV floor, max 3.5%, auto-corrects when actual deviates >5% from target.",file:"src/engine/cam.py",deps:["ptrh"]},
+  {id:"kevlar",cat:"portfolio",title:"Kevlar",sub:"Position Concentration Limits",desc:"Hard position limits enforced after Master Engine sizing. Maximum 22% single equity position, 48% AI-sector cap (provisional). No minimum floor — MICS conviction drives all sizing. Named after bulletproof material because these limits protect against catastrophic single-name risk.",file:"src/engine/kevlar.py",deps:[]},
+  {id:"paie",cat:"portfolio",title:"PAIE",sub:"Portfolio Architecture Integrity",desc:"Pre-execution integrity layer. Validates thesis concentration caps (e.g., AI_POWER_INFRA max 30%) and sizing coherence (positions sharing a thesis tag must respect hierarchy). Three states: CLEARED (execute), ADJUSTED (auto-resize then execute), BLOCKED (halt + engineering ticket). Never asks PM a question.",file:"src/engine/paie.py",deps:["order_book"]},
+  {id:"rulebook",cat:"state",title:"Rulebook",sub:"rulebook.json",desc:"Canonical configuration store for PAIE. Contains thesis tag registry (which tickers share which thesis), concentration caps per thesis, sizing hierarchy (trim order when over-concentrated), and conflict resolution protocol. Read-only for PAIE — amendments only through engineering process.",file:"src/data/rulebook.json",deps:["paie"]},
+
+  // ── HEDGE & OFFENSIVE ──
+  {id:"ptrh",cat:"hedge",title:"PTRH / Tail Hedge",sub:"QQQ Puts — Always On",desc:"Portfolio Tail Risk Hedge. One instrument only: QQQ outright puts. Always active regardless of regime. CAM sizes autonomously. Target delta -0.35, 90-120 day expiry, auto-roll at 30 DTE via spread order. 4-gate strike selection fallback hierarchy. Never appears in PM queue — PM is informed, never asked.",file:"src/engine/tail_hedge.py",deps:["laep"]},
+  {id:"slof",cat:"hedge",title:"SLOF",sub:"Synthetic Long Offensive",desc:"Offensive leverage instrument. ATM synthetic long (buy call + sell put, same strike, same expiry, delta +1.0). Regime-gated: RISK_ON/WATCH = full size, NEUTRAL = reduced to 75% of authorized notional, DEFENSIVE/CRASH = removed entirely (unwound before equity trims). Amplifies upside without adding cash to the long book.",file:"src/engine/slof.py",deps:["laep"]},
+  {id:"perm",cat:"hedge",title:"PERM",sub:"Covered Call Overwrites",desc:"Tier 0 autonomous covered call writing. Two trigger paths: PRIMARY — 30% unrealized gain on a position (lock in profits). SECONDARY — CDF decay multiplier falls to 0.80 or below (monetize dying thesis). Both require VIX >= 18 and options market open. Deduplication prevents both paths firing on same ticker same cycle.",file:"src/engine/perm.py",deps:["laep"]},
+  {id:"dshp",cat:"hedge",title:"DSHP",sub:"Defensive Sleeve Harvesting",desc:"Monitors and harvests gains in the 14% defensive sleeve (SGOL, DBMF). SGOL: trim when weight exceeds 20% of sleeve. DBMF: trim when position up 15% or 1.5pp ahead of benchmark. Tier 0 auto-execution with 4-hour veto window before refill. Keeps defensive allocations within bounds.",file:"src/engine/dshp.py",deps:["laep"]},
+  {id:"ares",cat:"hedge",title:"ARES",sub:"Re-Entry Engine",desc:"4-gate re-entry evaluation for adding to positions after drawdowns. Uses VARES (Volatility-Adjusted Re-Entry Sizing) with 90-day lookback, targeting 0.15-0.35 position size factor with 48-hour minimum between entries. Ensures positions aren't rebuilt too aggressively after being trimmed.",file:"src/engine/ares.py",deps:["master_engine"]},
+  {id:"aup",cat:"hedge",title:"AUP",sub:"Asymmetric Upside Protocol",desc:"Identifies conditions for asymmetric risk/reward. Five conditions must align: favorable regime, high average MICS, clean FEM, low RPE deterioration probability, and manageable drawdown. When cleared, authorizes SLOF deployment and enhanced position sizing for the Master Engine.",file:"src/engine/asymmetric_upside.py",deps:["slof"]},
+
+  // ── EXECUTION ──
+  {id:"laep",cat:"execution",title:"LAEP",sub:"Liquidity-Adjusted Execution",desc:"5-tier VIX-based execution protocol. Tier 1 (<16): Limit at mid. Tier 2 (16-22): Patience mode. Tier 3 (22-28): VWAP 15% participation. Tier 4 (28-40): TWAP full session, size halved. Tier 5 (>40): Halted except CRASH protocol. Module-specific overrides: PDS = immediate market, CDF = limit at bid+1, PTRH/SLOF = spread orders.",file:"src/engine/laep.py",deps:["order_book"]},
+  {id:"order_book",cat:"execution",title:"Order Book",sub:"L5 Execution Core",desc:"Receives OrderRequests from all engine modules, applies LAEP execution parameters, and stages them for broker submission. Sorts by priority (1=highest) and routes Tier 0 (autonomous) directly to broker. Tier 1 (PM confirmation required) routes to the Confirmation Queue. Clears queue after each execution wave.",file:"src/execution/order_book.py",deps:["broker_api"]},
+  {id:"strategic_queue",cat:"execution",title:"Strategic Queue",sub:"Deployment Intent",desc:"Holds PM-defined deployment orders that fire when regime conditions are met. Example: 'Buy GOOGL at 3.5% when score drops to 0.65.' Continuously monitors ARAS output. Transitions through DORMANT → WATCH → TRIGGERED → EXECUTED states. The PM's way of pre-loading conviction into the machine.",file:"src/execution/strategic_queue.py",deps:["order_book"]},
+  {id:"confirm_queue",cat:"execution",title:"Confirmation Queue",sub:"Tier 1 PM Review",desc:"Holds Tier 1 orders that require PM confirmation before execution. Each item has a veto window (typically 4 hours). If PM doesn't confirm or veto within the window, item follows the default action (usually auto-execute). Ensures PM retains oversight on significant discretionary actions.",file:"src/execution/confirmation_queue.py",deps:["broker_api"]},
+  {id:"broker_api",cat:"execution",title:"Broker API",sub:"IBKR / Alpaca",desc:"Dual-broker execution layer. Primary: Interactive Brokers TWS API (full options chain access, spread orders). Failover: Alpaca Markets REST API. 60-second health check during market hours with auto-failover. Handles position queries, NAV calculation, and order submission.",file:"src/execution/broker_api.py",deps:[]},
+  {id:"rebalance",cat:"execution",title:"Trade Generator",sub:"Rebalance Orders",desc:"Translates target weight differences (from Master Engine) into concrete OrderRequest objects. Calculates share quantities from weight deltas and current NAV. Tags each order with triggering module, tier level, and correlation ID for full audit trail traceability.",file:"src/execution/trade_order_generator.py",deps:["order_book"]},
+
+  // ── REPORTING ──
+  {id:"daily_monitor",cat:"reporting",title:"Daily Monitor",sub:"Morning Intelligence Brief",desc:"LLM-powered morning briefing generated at market open. Contains regime score, macro drivers, equity book status with session performance, deployment queue governance state, defensive sleeve status, and all module panel readings. The PM's primary decision-support document.",file:"src/reporting/daily_monitor.py",deps:[]},
+  {id:"eod_snapshot",cat:"reporting",title:"EOD Snapshot",sub:"1450 CT Closing Status",desc:"Five-field closing status check generated at 14:50 CT (1450) every trading day. Captures regime delta (morning vs close), all orders executed with fill prices, SLOF/PTRH status, PDS drawdown readings, and confirmation queue items. The PM reads this before 07:00 next morning.",file:"src/reporting/eod_snapshot.py",deps:[]},
+  {id:"session_log",cat:"reporting",title:"Session Log",sub:"Audit Trail",desc:"Append-only JSONL audit log recording every action taken by every module during every cycle. Each entry has timestamp, action_type, triggering_module, signal, ticker, and correlation_id. The immutable record of everything ARMS has ever done. Legal and compliance foundation.",file:"src/reporting/audit_log.py",deps:[]},
+  {id:"perf_attrib",cat:"reporting",title:"Performance Attribution",sub:"P&L Analysis",desc:"Decomposes portfolio returns by position, factor, and regime period. Shows which thesis tags are generating alpha vs dragging performance. Used by PM for strategic review and by CDF for underperformance gap detection.",file:"src/reporting/performance_attribution.py",deps:[]},
+
+  // ── SIMULATION ──
+  {id:"sim_engine",cat:"simulation",title:"Historical Data Replay",sub:"Simulation Engine",desc:"Simulates past market conditions by feeding historical data into the pipeline. Allows backtesting of regime transitions, ARAS thresholds, CAM sizing, and PTRH roll logic against actual 2022 crash data. Validates that the system would have protected capital during known drawdowns.",file:"simulate.sh",deps:["data_pipeline"]},
+
+  // ── STATE & CONFIG ──
+  {id:"bridge_configs",cat:"state",title:"Bridge Configs",sub:"Data Bridge Templates",desc:"JSON template files that bridge live market data into engine module inputs. Includes CDF bridge (conviction state), SENTINEL bridge (event routing), RSS bridge (sentiment inputs), and macro event overlay bridge. Each bridge has a health check monitoring freshness and validity.",file:"data/",deps:["data_pipeline"]},
+  {id:"portfolio_snapshot",cat:"state",title:"Portfolio Snapshot",sub:"mj_portfolio_snapshot.json",desc:"PM-authored portfolio configuration file. Contains current NAV baseline, equity holdings with target weights and thesis flags, defensive sleeve allocations, and PTRH multiplier settings. The PM's canonical view of what the portfolio should look like.",file:"data/mj_portfolio_snapshot.json",deps:["master_engine","strategic_queue"]},
+];
+
+// ═══════════════════════════════════════════════════════════════
+// LAYER DEFINITIONS (display order)
+// ═══════════════════════════════════════════════════════════════
+const LAYERS = [
+  {id:"infra",label:"Infrastructure & Cloud",tag:"Foundation",tagColor:"var(--purple)",nodes:["aws_fargate","postgres_rds","redis_cache","llm_gateway"]},
+  {id:"data",label:"Data Sources & Ingestion",tag:"L1",tagColor:"var(--accent2)",nodes:["market_prices","fred_macro","sp_pmi","crypto_micro","vix_options","sec_edgar","news_rss","data_pipeline","event_bridge"]},
+  {id:"regime",label:"Regime Scoring & Sentiment",tag:"L2",tagColor:"var(--accent)",nodes:["macro_compass","aras","rpe","rss_sentiment"]},
+  {id:"risk",label:"Risk Management",tag:"Defense",tagColor:"var(--red)",nodes:["pds","fem","circuit_breaker","ssl","incap"]},
+  {id:"intel",label:"Intelligence & Thesis Integrity",tag:"L3",tagColor:"var(--orange)",nodes:["sentinel","cdm","tdc","cdf","trp","jpvi","sccr","elvt","pfvt"]},
+  {id:"portfolio",label:"Portfolio Construction",tag:"L4",tagColor:"var(--green)",nodes:["mics","master_engine","cam","kevlar","paie","rulebook"]},
+  {id:"hedge",label:"Hedge & Offensive Instruments",tag:"Weapons",tagColor:"var(--yellow)",nodes:["ptrh","slof","perm","dshp","ares","aup"]},
+  {id:"execution",label:"Execution & Order Management",tag:"L5",tagColor:"var(--pink)",nodes:["laep","order_book","strategic_queue","confirm_queue","broker_api","rebalance"]},
+  {id:"reporting",label:"Reporting & Monitoring",tag:"Output",tagColor:"#a78bfa",nodes:["daily_monitor","eod_snapshot","session_log","perf_attrib"]},
+  {id:"misc",label:"Simulation & State",tag:"Support",tagColor:"var(--text3)",nodes:["sim_engine","bridge_configs","portfolio_snapshot"]},
+];
+
+// ═══════════════════════════════════════════════════════════════
+// STATE MANAGEMENT (localStorage)
+// ═══════════════════════════════════════════════════════════════
+const STORAGE_KEY = 'arms_system_map_v1';
+
+function loadState(){
+  try{const raw=localStorage.getItem(STORAGE_KEY);return raw?JSON.parse(raw):{}}catch(e){return{}}
+}
+function saveState(state){
+  localStorage.setItem(STORAGE_KEY,JSON.stringify(state));
+}
+function getNodeState(id){
+  const s=loadState();
+  return s[id]||{status:'neutral',notes:''};
+}
+function setNodeState(id,patch){
+  const s=loadState();
+  s[id]={...(s[id]||{status:'neutral',notes:''}),...patch};
+  saveState(s);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// RENDER
+// ═══════════════════════════════════════════════════════════════
+const nodeMap={};NODES.forEach(n=>nodeMap[n.id]=n);
+const canvas=document.getElementById('canvasInner');
+
+function catClass(cat){return 'cat-'+cat}
+function tagClass(cat){return 't-'+cat}
+
+function renderAll(){
+  canvas.innerHTML='';
+  LAYERS.forEach((layer,li)=>{
+    // Layer header
+    const hdr=document.createElement('div');
+    hdr.className='layer';
+    hdr.innerHTML=`
+      <div class="layer-header">
+        <span class="layer-label">${layer.label}</span>
+        <span class="layer-line"></span>
+        <span class="layer-tag" style="background:${layer.tagColor}22;color:${layer.tagColor};border:1px solid ${layer.tagColor}44">${layer.tag}</span>
+      </div>
+    `;
+
+    const grid=document.createElement('div');
+    grid.className='node-grid';
+
+    layer.nodes.forEach(nid=>{
+      const n=nodeMap[nid];if(!n)return;
+      const ns=getNodeState(nid);
+      const el=document.createElement('div');
+      el.className=`node ${catClass(n.cat)}`;
+      el.dataset.id=nid;
+      el.innerHTML=`
+        <div class="node-status ${ns.status}"></div>
+        <div class="node-title">${n.title}</div>
+        <div class="node-sub">${n.sub}</div>
+      `;
+      el.addEventListener('click',()=>openPanel(nid));
+      grid.appendChild(el);
+    });
+
+    hdr.appendChild(grid);
+    canvas.appendChild(hdr);
+
+    // Arrow between layers
+    if(li<LAYERS.length-1){
+      const arrow=document.createElement('div');
+      arrow.className='flow-arrow';
+      arrow.textContent='▼  ▼  ▼';
+      canvas.appendChild(arrow);
+    }
+  });
+
+  updateTopStats();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PANEL
+// ═══════════════════════════════════════════════════════════════
+const panel=document.getElementById('panel');
+const overlay=document.getElementById('panelOverlay');
+let currentNodeId=null;
+
+function openPanel(nid){
+  currentNodeId=nid;
+  const n=nodeMap[nid];
+  const ns=getNodeState(nid);
+
+  // Tags
+  document.getElementById('panelTags').innerHTML=
+    `<span class="panel-tag ${tagClass(n.cat)}">${n.cat.replace(/-/g,' ').replace(/\b\w/g,c=>c.toUpperCase())}</span>`+
+    `<span class="panel-status-tag s-${ns.status}">${ns.status.replace('-',' ')}</span>`;
+
+  document.getElementById('panelTitle').textContent=n.title;
+  document.getElementById('panelId').textContent='SYSTEM_NODE_ID: '+nid;
+  document.getElementById('panelDesc').textContent=n.desc;
+  document.getElementById('panelFile').textContent=n.file?'File: '+n.file:'';
+
+  // Dependencies
+  const depSection=document.getElementById('panelDepsSection');
+  const depList=document.getElementById('panelDeps');
+  if(n.deps&&n.deps.length){
+    depSection.style.display='';
+    depList.innerHTML=n.deps.map(d=>{
+      const dn=nodeMap[d];
+      return dn?`<li data-id="${d}">${dn.title}</li>`:`<li>${d}</li>`;
+    }).join('');
+    depList.querySelectorAll('li[data-id]').forEach(li=>{
+      li.addEventListener('click',e=>{
+        e.stopPropagation();
+        openPanel(li.dataset.id);
+      });
+    });
+  }else{
+    depSection.style.display='none';
+  }
+
+  // Status buttons
+  document.querySelectorAll('.status-btn').forEach(btn=>{
+    btn.classList.toggle('selected',btn.dataset.status===ns.status);
+  });
+
+  // Notes
+  document.getElementById('panelNotes').value=ns.notes||'';
+
+  // Highlight active node
+  document.querySelectorAll('.node').forEach(el=>el.classList.remove('active'));
+  const activeEl=document.querySelector(`.node[data-id="${nid}"]`);
+  if(activeEl)activeEl.classList.add('active');
+
+  panel.classList.add('open');
+  overlay.classList.add('open');
+}
+
+function closePanel(){
+  // Save notes before closing
+  if(currentNodeId){
+    const notes=document.getElementById('panelNotes').value;
+    setNodeState(currentNodeId,{notes});
+  }
+  panel.classList.remove('open');
+  overlay.classList.remove('open');
+  document.querySelectorAll('.node').forEach(el=>el.classList.remove('active'));
+  currentNodeId=null;
+}
+
+document.getElementById('panelClose').addEventListener('click',closePanel);
+overlay.addEventListener('click',closePanel);
+
+// Status button clicks
+document.querySelectorAll('.status-btn').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    if(!currentNodeId)return;
+    const status=btn.dataset.status;
+    setNodeState(currentNodeId,{status});
+    document.querySelectorAll('.status-btn').forEach(b=>b.classList.remove('selected'));
+    btn.classList.add('selected');
+    // Update node dot
+    const dot=document.querySelector(`.node[data-id="${currentNodeId}"] .node-status`);
+    if(dot){dot.className='node-status '+status}
+    // Update panel tag
+    const stag=document.querySelector('.panel-status-tag');
+    if(stag){stag.className='panel-status-tag s-'+status;stag.textContent=status.replace('-',' ')}
+    updateTopStats();
+  });
+});
+
+// Auto-save notes on input
+document.getElementById('panelNotes').addEventListener('input',()=>{
+  if(currentNodeId){
+    setNodeState(currentNodeId,{notes:document.getElementById('panelNotes').value});
+  }
+});
+
+// Keyboard
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closePanel()});
+
+// ═══════════════════════════════════════════════════════════════
+// STATS
+// ═══════════════════════════════════════════════════════════════
+function updateTopStats(){
+  const state=loadState();
+  let complete=0,progress=0,neutral=0;
+  NODES.forEach(n=>{
+    const s=(state[n.id]&&state[n.id].status)||'neutral';
+    if(s==='complete')complete++;
+    else if(s==='in-progress')progress++;
+    else neutral++;
+  });
+  document.getElementById('countComplete').textContent=complete;
+  document.getElementById('countProgress').textContent=progress;
+  document.getElementById('countNeutral').textContent=neutral;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════════
+renderAll();
+</script>
+</body>
+</html>

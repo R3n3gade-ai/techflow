@@ -52,7 +52,7 @@ class LLMWrapper:
                 elif self.provider == 'google':
                     self.model = "gemini-3.1-pro-preview"
                 elif self.provider == 'openai':
-                    self.model = "gpt-4o"
+                    self.model = "gpt-5.4"
 
                 
         print(f"[LLMWrapper] Initialized with provider: {self.provider.upper()}, model: {self.model}")
@@ -69,9 +69,16 @@ class LLMWrapper:
         Returns:
             The raw text response from the API (usually JSON).
         """
-        # In a real system, we would first retrieve context if a query is provided.
-        # context = vector_db.search(knowledge_base_query) if knowledge_base_query else ""
-        # prompt = f"Context: {context}\n\n{prompt}"
+        # Retrieve knowledge base context if query provided
+        if knowledge_base_query:
+            try:
+                from intelligence.kb_ingest import search_knowledge_base, format_kb_context
+                kb_results = search_knowledge_base(knowledge_base_query, top_k=5)
+                if kb_results:
+                    kb_context = format_kb_context(kb_results)
+                    prompt = f"Relevant ARMS Knowledge Base Context:\n{kb_context}\n\n---\n\n{prompt}"
+            except Exception as e:
+                print(f"[LLMWrapper] KB context retrieval failed (non-blocking): {e}")
         
         print(f"[LLMWrapper] Submitting {task_type} task to {self.model}...")
         

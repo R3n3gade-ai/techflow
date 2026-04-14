@@ -1,63 +1,127 @@
-# Achelion ARMS: MASTER IMPLEMENTATION PLAN (Current)
+﻿# Achelion ARMS — Master Implementation Plan
+**Last Updated: April 13, 2026**
 
-## Phase 0: Foundation & Core Logic (100% COMPLETE)
-- [x] **P0.01** Desktop UI Scaffolding (Mock-ups in `monitor_examples/`)
-- [x] **P0.02** Infrastructure & Foundation setup
-- [x] **P0.03** Architecture AB Weighting Migration (58/20/14/8)
-- [x] **P0.04** DEFENSE Exemption Logic
-- [x] **P0.05** Kevlar Hard Limit Enforcement (22% Max Single, 3% Min) - **Restored (Sprint 4)**
-- [x] **P0.06** ARAS Logic Migration (with CORRELATED stress source detection) - **Restored (Sprint 4)**
-- [x] **P0.07** Macro Compass Regime Scoring Engine - **Restored (Sprint 4)**
-- [x] **P0.08** Master Engine (Portfolio Construction) - **Restored (Sprint 4)**
-- [x] **P0.09** Portfolio Drawdown Sentinel (PDS) - **Restored (Sprint 4)**
-- [x] **P0.10** Factor Exposure Monitor (FEM) - **Restored (Sprint 4)**
-
-## Phase 1: Intelligence Frontiers & Automation (100% COMPLETE)
-- [x] **Frontier F3 (MICS):** `src/engine/mics.py` fully implemented.
-- [x] **Frontier F4 (Audit Log):** `src/reporting/audit_log.py` immutable logging active with Correlation IDs.
-- [x] **Frontier F5 (Confirmation Queue):** `src/execution/confirmation_queue.py` 3-option interface active & durably persisted to JSON backend.
-- [x] **Data Ingestion Pipeline:** `src/data_feeds/pipeline.py` & FRED Plugin established (Live Official API Connection).
-- [x] **Execution Interfaces:** `OrderRequest` and `Position` data structures frozen and unified across modules.
-- [x] **Broker Integration (Live Scaffold):** `src/execution/broker_api.py` connection logic active. Live IBKR positions and NAV ingested over SSH tunnel.
-- [x] **PTRH Automation:** `src/engine/tail_hedge.py` fully automated (Module A). Addendum 6 Delta-Primary architecture and Multi-Gate Fallbacks implemented.
-- [x] **DSHP:** `src/engine/dshp.py` fully automated (Module B).
-- [x] **CDM:** `src/engine/cdm.py` and `src/config/position_dependency_map.py` fully automated (Module C).
-- [x] **TDC:** `src/engine/tdc.py` and `src/intelligence/llm_wrapper.py` fully automated (Module D). Universal LLM wrapper active.
-- [x] **Frontier F1 (Full Ingestion):** `src/data_feeds/pmi_plugin.py` and `src/data_feeds/crypto_plugin.py` live.
-- [x] **Frontier F2 (Scan Engine):** `src/engine/systematic_scan.py` v2.0 fully automated.
-- [x] **RPE:** `src/engine/regime_probability.py` v2.0 fully automated.
-- [x] **Infrastructure:** AWS "The Fortress" deployment (Terraform foundation in `infra/`).
-- [x] **Live Monitor v2.1:** `src/reporting/daily_monitor_renderer.py` fully automated to institutional PDF-style HTML output.
-
-## Phase 2: Resilience & Expansion (100% COMPLETE)
-- [x] **ARES** (Re-Entry System): `src/engine/ares.py` Tier 0 logic complete.
-- [x] **CDF** (Conviction Decay Function): `src/engine/cdf.py` Day 45/90/135 logic complete.
-- [x] **CCM** (Conviction Calibration Module): `src/engine/conviction_calibration.py` learning loop complete.
-- [x] **TRP** (Thesis Retirement Protocol): `src/engine/thesis_retirement.py` Tier 1 logic complete.
-- [x] **MC-RSS** (Retail Sentiment Score): `src/engine/mc_rss.py` contrarian logic complete.
-- [x] **Incapacitation Protocol**: `src/engine/incapacitation.py` safety timers complete.
-- [x] **Live Monitor v2.1 Update**: `src/reporting/daily_monitor.py` Phase 2 integration complete.
-
-## Phase 3: Platform & Resilience (100% COMPLETE)
-- [x] **PID** (Proactive Intelligence Digest): `src/reporting/proactive_digest.py` LP narrative engine complete.
-- [x] **AUP** (Asymmetric Upside Protocol): `src/engine/asymmetric_upside.py` SLOF expansion logic complete.
-- [x] **Performance Attribution**: Module-level alpha tracking integrated into Daily Monitor v2.1.
-- [x] **Platform Foundation**: Licensing config layer and fund-agnostic parameter set established.
-- [x] **Order Book (LAEP)**: Liquidity Adjusted Execution Protocol implemented mapping VIX -> VWAP logic.
-- [x] **Circuit Breaker**: Intraday threshold stops active.
-
----
-**PROJECT STATUS: ACHELION ARMS v1.2 - CORE RESTORED AND FULL SYSTEM DEPLOYED**
-- **Autonomy Level:** Tier 0 (Full Autonomous)
-- **Intelligence Layer:** Universal LLM Wrapper Active
-- **Safety Layer:** Active (Incapacitation, PDS, LAEP Order Book, Circuit Breaker)
-- **Execution:** Live IBKR Pipeline Active (Positions/NAV Ingestion)
+> Status: **ALL APPLICATION CODE COMPLETE**. Only external API connections and infrastructure provisioning remain.
 
 ---
 
-## Documentation Updates (March 2026)
-- [x] **Codebase Game Plan v2.0** (`CODEBASE_GAME_PLAN_v2.0.md`)
-- [x] **Data Feed Matrix v2.0** (`DATA_FEED_MATRIX_v2.0.md`)
-- [x] **Institutional Tech Stack v2.0** (`INSTITUTIONAL_TECH_STACK_v2.0.md`)
-- [x] **ARMS v4.0 Institutional Briefing** (`ARMS_v4.0_Briefing_Institutional_Risk_Management_and_Execution_Autonomy.md`)
-- [x] **Plain-English Partner Summary** (`ARMS_Plain_English_Executive_Summary.md`)
+## System Summary
+
+Achelion ARMS is a $500M+ autonomous hedge fund defense system implementing a 7-layer
+risk architecture. The system runs a full daily operational cycle (pre-market sweep,
+intraday monitoring, EOD snapshot) across 107 Python modules.
+
+**Architecture AB**: 58% Equity / 20% Crypto / 14% Defensive / 8% Cash
+
+---
+
+## Phase 0: Foundation & Core Logic — COMPLETE
+
+| ID    | Module                          | File                        | Status |
+|-------|---------------------------------|-----------------------------|--------|
+| P0.01 | Architecture AB Weighting       | `engine/master_engine.py`   | Done   |
+| P0.02 | Kevlar Hard Limits (22%/3%)     | `engine/kevlar.py`          | Done   |
+| P0.03 | ARAS Regime Assessment          | `engine/aras.py`            | Done   |
+| P0.04 | Macro Compass Scoring           | `engine/macro_compass.py`   | Done   |
+| P0.05 | Drawdown Sentinel (PDS)         | `engine/drawdown_sentinel.py` | Done |
+| P0.06 | Factor Exposure Monitor (FEM)   | `engine/factor_exposure.py` | Done   |
+| P0.07 | Master Engine (L4)              | `engine/master_engine.py`   | Done   |
+
+## Phase 1: Intelligence & Automation — COMPLETE
+
+| ID    | Module                          | File                          | Status |
+|-------|---------------------------------|-------------------------------|--------|
+| P1.01 | MICS Conviction Scoring         | `engine/mics.py`              | Done   |
+| P1.02 | SENTINEL Thesis Workflow        | `engine/sentinel_workflow.py` | Done   |
+| P1.03 | TDC Thesis Integrity            | `engine/tdc.py`               | Done   |
+| P1.04 | CDM Signal Propagation          | `engine/cdm.py`               | Done   |
+| P1.05 | CDF Position Decay              | `engine/cdf.py`               | Done   |
+| P1.06 | CAM Hedge Sizing                | `engine/cam.py`               | Done   |
+| P1.07 | PTRH Tail Hedge Automation      | `engine/tail_hedge.py`        | Done   |
+| P1.08 | DSHP Defensive Harvest          | `engine/dshp.py`              | Done   |
+| P1.09 | RPE Regime Probability          | `engine/regime_probability.py`| Done   |
+| P1.10 | Systematic Scan Engine          | `engine/systematic_scan.py`   | Done   |
+| P1.11 | Data Pipeline (FRED/Crypto/PMI) | `data_feeds/pipeline.py`      | Done   |
+| P1.12 | IBKR Broker Adapter             | `execution/broker_api.py`     | Done   |
+| P1.13 | Universal LLM Wrapper           | `intelligence/llm_wrapper.py` | Done   |
+| P1.14 | Audit Log (JSONL)               | `reporting/audit_log.py`      | Done   |
+| P1.15 | Confirmation Queue              | `execution/confirmation_queue.py` | Done |
+| P1.16 | Daily Monitor v4.0              | `reporting/daily_monitor.py`  | Done   |
+
+## Phase 2: Resilience & Intelligence — COMPLETE
+
+| ID    | Module                          | File                              | Status |
+|-------|---------------------------------|-----------------------------------|--------|
+| P2.01 | ARES Re-Entry System            | `engine/ares.py`                  | Done   |
+| P2.02 | MC-RSS Retail Sentiment         | `engine/mc_rss.py`                | Done   |
+| P2.03 | CCM Conviction Calibration      | `engine/conviction_calibration.py`| Done   |
+| P2.04 | TRP Thesis Retirement           | `engine/thesis_retirement.py`     | Done   |
+| P2.05 | Incapacitation Protocol         | `engine/incapacitation.py`        | Done   |
+| P2.06 | ELVT Earnings Language          | `intelligence/elvt.py`            | Done   |
+| P2.07 | JPVI Job Posting Velocity       | `intelligence/jpvi.py`            | Done   |
+| P2.08 | PFVT Patent Filing              | `intelligence/pfvt.py`            | Done   |
+| P2.09 | SCCR Supply Chain               | `intelligence/sccr.py`            | Done   |
+| P2.10 | Gate 3 Supplementary Scoring    | `intelligence/gate3_supplementary.py` | Done |
+
+## Phase 3: Platform & Execution — COMPLETE
+
+| ID    | Module                          | File                              | Status |
+|-------|---------------------------------|-----------------------------------|--------|
+| P3.01 | LAEP Order Book (5-tier VIX)    | `engine/laep.py` + `execution/order_book.py` | Done |
+| P3.02 | Circuit Breaker (SPX/VIX)       | `execution/circuit_breaker.py`    | Done   |
+| P3.03 | PAIE Integrity Engine           | `engine/paie.py`                  | Done   |
+| P3.04 | PERM Covered Call Automation    | `engine/perm.py`                  | Done   |
+| P3.05 | AUP Asymmetric Upside           | `engine/asymmetric_upside.py`     | Done   |
+| P3.06 | SLOF Leverage Overlay           | `engine/slof.py`                  | Done   |
+| P3.07 | Performance Attribution         | `reporting/performance_attribution.py` | Done |
+| P3.08 | EOD Snapshot                    | `reporting/eod_snapshot.py`       | Done   |
+| P3.09 | Proactive Digest                | `reporting/proactive_digest.py`   | Done   |
+| P3.10 | Session Log Analytics           | `engine/session_log_analytics.py` | Done   |
+
+## Phase 4: Operations & Infrastructure — COMPLETE
+
+| ID    | Module                          | File                              | Status |
+|-------|---------------------------------|-----------------------------------|--------|
+| P4.01 | Correlation Monitor             | `execution/correlation_monitor.py`| Done   |
+| P4.02 | Escalation Engine               | `execution/escalation_engine.py`  | Done   |
+| P4.03 | Overnight Monitor               | `execution/overnight_monitor.py`  | Done   |
+| P4.04 | PM Co-Sign Protocol             | `execution/pm_protocol.py`        | Done   |
+| P4.05 | PCR Regime Assessment           | `modules/pcr_regime.py`           | Done   |
+| P4.06 | Shutdown Risk Calendar          | `modules/shutdown_risk.py`        | Done   |
+| P4.07 | ARAS Sub-Modules (4)            | `modules/deleveraging_risk.py` etc. | Done |
+| P4.08 | Stress Scenario Library         | `modules/stress_scenarios.py`     | Done   |
+| P4.09 | DB Adapter (Postgres/Redis)     | `infra/db_adapter.py`             | Done   |
+| P4.10 | KB Ingest Pipeline              | `intelligence/kb_ingest.py`       | Done   |
+| P4.11 | Master Scheduler                | `scheduling/master_scheduler.py`  | Done   |
+| P4.12 | Queue Governance                | `execution/queue_*.py`            | Done   |
+| P4.13 | Strategic Queue                 | `execution/strategic_queue.py`    | Done   |
+| P4.14 | Trade Order Generator           | `execution/trade_order_generator.py` | Done |
+
+---
+
+## What Remains: API Connections & Infrastructure Only
+
+All application logic is written, tested for syntax, and wired into the main orchestration
+loop (`main.py`). The system runs in development/offline mode using local JSON fallbacks.
+
+**To go live, the following external connections must be configured in `.env`:**
+
+See `docs/ARMS_API_CONNECTIONS_REQUIRED.md` for the full checklist.
+
+---
+
+## File Counts
+
+| Directory       | Files | Description                             |
+|-----------------|------:|-----------------------------------------|
+| `engine/`       |    36 | Core risk engines + state persistence   |
+| `data_feeds/`   |    12 | Market data pipeline + feed plugins     |
+| `execution/`    |    15 | Broker, order book, queue, safety rails |
+| `intelligence/` |     8 | LLM wrapper, anticipatory signals, KB   |
+| `reporting/`    |     8 | Monitor, snapshot, audit, attribution   |
+| `modules/`      |     7 | ARAS sub-modules + stress scenarios     |
+| `scheduling/`   |     1 | Master scheduler (ECS/APScheduler)      |
+| `infra/`        |     1 | PostgreSQL + Redis adapter              |
+| `config/`       |     3 | Configuration constants                 |
+| Root            |     2 | `main.py`, `run_daily_report.py`        |
+| **Total**       | **93**| **(+ 14 `__init__.py` = 107 files)**    |

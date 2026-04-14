@@ -1,0 +1,5 @@
+{
+  "name": "System Architecture Navigator",
+  "description": "An interactive Mermaid-based system architecture map with node status tracking and detailed explanations.",
+  "requestFramePermissions": []
+}

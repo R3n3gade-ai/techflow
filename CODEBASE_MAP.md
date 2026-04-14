@@ -1,66 +1,154 @@
-### Achelion ARMS: Codebase Map & Architecture (Updated April 8, 2026)
+﻿# Achelion ARMS — Codebase Map
+**Last Updated: April 13, 2026**
 
 ```
-achelion_arms/
-│
-├── 📄 CODEBASE_MAP.md              # This file: A visual map of the entire project.
-├── 📄 MASTER_IMPLEMENTATION_PLAN.md # The live tracker of what has been implemented.
-│
-├── 📁 docs/                         # Contains all the detailed specification and strategy documents.
-│   ├── 📄 ARMS_COMPLETE_SYSTEM_ARCHITECTURE.mermaid # The canonical 7-layer architecture diagram (April 8).
-│   ├── 📄 ARMS_COMPREHENSIVE_CHECKPOINT_AUDIT_2026-04-08.md # The exhaustive audit confirming all modules.
-│   ├── 📄 understanding_arms_gp_briefing_updated.md # The plain-language GP briefing document.
-│   ├── 📄 ARMS_FSD_Master_Build_Document_v1.1.md
-│   └── 📄 ... (All Addenda 1-6 and historical audits)
-│
-├── 📁 data/                        # Contains the JSON state overlays and config maps
-│   ├── 📄 mj_portfolio_snapshot.json # The live portfolio state override for matching MJ's report.
-│   ├── 📄 mj_pm_notes.json         # The editorial bridge file for PM narrative insertion.
-│   └── 📄 mj_strategic_queue.json  # The staged proactive deployment queue items.
-│
-├── 📁 SAMPLES/                     # Sample outputs
-│   └── 📄 daily_monitor_mj_exact.html # The rendered institutional PDF-style report.
-│
-└── 📁 src/                         # The main folder for all of our working Python code.
-    │
-    ├── 🐍 main.py                  # The Orchestrator: Wires all 7 layers together.
-    │
-    ├── 📁 data_feeds/              # 🧠 L1: THE SENSES
-    │   ├── 🐍 pipeline.py          # Aggregates feeds into a single data stream.
-    │   ├── 🐍 fred_plugin.py       # Live macro data from the Federal Reserve API.
-    │   ├── 🐍 sec_edgar_feed.py    # Form 4 Insider Trades.
-    │   └── 🐍 news_rss_feed.py     # Live event bridges (geopolitics, earnings).
-    │
-    ├── 📁 engine/                  # 🧠 L2 & L3: THE NAVIGATOR & THE PILLARS
-    │   ├── 🐍 macro_compass.py     # L2: Regime Scoring Engine (0.0 to 1.0).
-    │   ├── 🐍 aras.py              # L2: Converts score to Regime & Equity Ceiling.
-    │   ├── 🐍 drawdown_sentinel.py # L3 (PDS): Hard NAV drawdown stop (-12% / -18%).
-    │   ├── 🐍 kevlar.py            # L3: 22% single-name concentration limit.
-    │   ├── 🐍 tail_hedge.py        # L3 (PTRH): Delta-primary (-0.35) options scanner.
-    │   ├── 🐍 cam.py               # L3: Autonomous tail hedge sizing multiplier.
-    │   ├── 🐍 dshp.py              # L3: Defensive sleeve gain harvester.
-    │   ├── 🐍 cdm.py               # L3: Customer Dependency Map (signal propagation).
-    │   ├── 🐍 tdc.py               # L3: Thesis Dependency Checker (thesis integrity).
-    │   ├── 🐍 ares.py              # L3: Re-Entry System (3-gate clearance).
-    │   ├── 🐍 cdf.py               # L3: Conviction Decay Function (10pp underperformance logic).
-    │   ├── 🐍 perm.py              # L3: Covered Call yield harvester.
-    │   ├── 🐍 slof.py              # L3: Synthetic Leverage Overlay (1.25x).
-    │   ├── 🐍 mics.py              # L3: Model-Implied Conviction Score logic.
-    │   └── 🐍 master_engine.py     # L4: Portfolio Builder (calculates ideal weights).
-    │
-    ├── 📁 intelligence/            # 🧠 L3: THE ANALYST
-    │   └── 🐍 llm_wrapper.py       # Universal LLM Bridge (Anthropic, OpenAI, Google) for TDC/SENTINEL.
-    │
-    ├── 📁 execution/               # 🧠 L5 & L6: THE NERVES & MUSCLES
-    │   ├── 🐍 order_book.py        # L5: LAEP (Liquidity-Adjusted Execution Protocol).
-    │   ├── 🐍 strategic_queue.py   # L5: Proactive regime-triggered deployment queue.
-    │   ├── 🐍 circuit_breaker.py   # L5: Hard intraday stops (SPX -5% / VIX >30).
-    │   ├── 🐍 broker_api.py        # L6: The IBKR adapter for placing live paper trades.
-    │   └── 🐍 confirmation_queue.py# L5: The secure inbox for PM Tier 1 actions.
-    │
-    └── 📁 reporting/               # 🧠 L7: THE MEMORY & VOICE
-        ├── 🐍 audit_log.py         # Immutable JSON log of every system decision.
-        ├── 🐍 daily_monitor.py     # Aggregates L1-L6 data into the daily payload.
-        ├── 🐍 daily_monitor_view.py# Formats payload matching MJ's specs.
-        └── 🐍 daily_monitor_renderer.py # Renders the HTML document.
+techflow/
++-- .env                          # API keys (gitignored)
++-- .gitignore
++-- MASTER_IMPLEMENTATION_PLAN.md  # What is built vs pending
++-- CODEBASE_MAP.md                # This file
++--
++-- docs/
+|   +-- ARMS_API_CONNECTIONS_REQUIRED.md   # Live connection checklist
+|   +-- ARMS_FSD_Master_Build_Document_v1.1.md
+|   +-- ARMS_GP_Briefing_v1.0.md
+|   +-- ARMS_Infrastructure_Specification_v1.0.md
+|   +-- (additional spec/audit documents)
++--
++-- infra/
+|   +-- main.tf                    # Terraform: ECS/RDS/Redis/S3/SNS
+|   +-- variables.tf
+|   +-- outputs.tf
++--
++-- system_map/
+|   +-- index.html                 # Interactive architecture visualization
++--
++-- src/
+    +-- main.py                    # Full 7-phase ARMS orchestration cycle
+    +-- run_daily_report.py        # Standalone daily report runner
+    +--
+    +-- data_feeds/                # L1 — Market Data Ingestion
+    |   +-- pipeline.py            #   Orchestrates all feed plugins
+    |   +-- fred_plugin.py         #   FRED API (VIX, 10Y, HY spread, PMI)
+    |   +-- crypto_plugin.py       #   IBKR CME futures + Coinbase spot
+    |   +-- pmi_plugin.py          #   S&P Global / ISM PMI scraping
+    |   +-- sec_edgar_feed.py      #   SEC EDGAR Form 4 insider trades
+    |   +-- sec_edgar_plugin.py    #   SEC EDGAR (requests/BS4 variant)
+    |   +-- news_rss_feed.py       #   Public RSS news ingestion
+    |   +-- event_bridge.py        #   Manual event bridge (dev)
+    |   +-- event_state.py         #   Event deduplication
+    |   +-- macro_event_state.py   #   Typed macro event classification
+    |   +-- interfaces.py          #   SignalRecord, FeedPlugin ABC
+    |   +-- feed_interface.py      #   Alternate FeedPlugin ABC
+    +--
+    +-- engine/                    # L2-L4 — Core Risk & Conviction Engines
+    |   +-- macro_compass.py       #   L2: Regime scoring (0.0-1.0)
+    |   +-- aras.py                #   L3: ARAS regime -> equity ceiling
+    |   +-- master_engine.py       #   L4: Target weight construction
+    |   +-- mics.py                #   MICS conviction scoring formula
+    |   +-- kevlar.py              #   22% single-name concentration cap
+    |   +-- drawdown_sentinel.py   #   PDS portfolio drawdown sentinel
+    |   +-- factor_exposure.py     #   FEM 5-factor concentration check
+    |   +-- cam.py                 #   CAM tail hedge sizing
+    |   +-- tail_hedge.py          #   PTRH autonomous put rolling
+    |   +-- dshp.py                #   DSHP defensive sleeve harvest
+    |   +-- cdm.py                 #   CDM entity signal propagation
+    |   +-- tdc.py                 #   TDC thesis integrity audit (LLM)
+    |   +-- cdf.py                 #   CDF position decay (45/90/135d)
+    |   +-- regime_probability.py  #   RPE regime transition forecast
+    |   +-- ares.py                #   ARES re-entry system + VARES
+    |   +-- mc_rss.py              #   MC-RSS retail sentiment
+    |   +-- incapacitation.py      #   PM heartbeat safety backstop
+    |   +-- asymmetric_upside.py   #   AUP stability unlocks
+    |   +-- slof.py                #   SLOF leverage overlay
+    |   +-- paie.py                #   PAIE pre-execution integrity
+    |   +-- perm.py                #   PERM covered call automation
+    |   +-- laep.py                #   LAEP 5-tier VIX execution
+    |   +-- thesis_retirement.py   #   TRP orderly exit protocol
+    |   +-- conviction_calibration.py  # CCM learning loop
+    |   +-- systematic_scan.py     #   Weekly autonomous thesis scan (LLM)
+    |   +-- session_log_analytics.py   # SLA monthly metrics
+    |   +-- sentinel_workflow.py   #   SENTINEL thesis lifecycle
+    |   +-- sentinel_bridge.py     #   Interim MICS gate data bridge
+    |   +-- cdf_analytics.py       #   Live underperformance vs QQQ
+    |   +-- cdf_bridge.py          #   Interim CDF input bridge
+    |   +-- cdf_state.py           #   CDF state persistence
+    |   +-- mc_rss_analytics.py    #   Live NAAIM scraping
+    |   +-- rss_bridge.py          #   Interim RSS input bridge
+    |   +-- bridge_health.py       #   Bridge file staleness check
+    |   +-- bridge_paths.py        #   Bridge path resolution
+    |   +-- pds_state.py           #   PDS high-water mark state
+    |   +-- tdc_state.py           #   TDC TIS score persistence
+    +--
+    +-- intelligence/              # L6 — AI / LLM Intelligence Layer
+    |   +-- llm_wrapper.py         #   Multi-provider LLM bridge
+    |   +-- kb_ingest.py           #   Vector KB ingest pipeline
+    |   +-- gate3_supplementary.py #   Gate 3 anticipatory scoring
+    |   +-- elvt.py                #   Earnings language velocity
+    |   +-- jpvi.py                #   Job posting velocity
+    |   +-- pfvt.py                #   Patent filing velocity
+    |   +-- sccr.py                #   Supply chain cross-reference
+    +--
+    +-- execution/                 # L5 — Order Execution & Safety
+    |   +-- broker_api.py          #   IBKR ib_insync adapter
+    |   +-- order_book.py          #   L5 order book + LAEP tiers
+    |   +-- order_request.py       #   OrderRequest dataclass
+    |   +-- trade_order_generator.py   # Weight -> OrderRequest diff
+    |   +-- circuit_breaker.py     #   SPX -5% / VIX >30 kills
+    |   +-- confirmation_queue.py  #   Tier 1/2 confirmation queue
+    |   +-- strategic_queue.py     #   Regime-triggered deploy queue
+    |   +-- correlation_monitor.py #   30d equity/crypto correlation
+    |   +-- escalation_engine.py   #   Cumulative loss auto-suppress
+    |   +-- overnight_monitor.py   #   ES/VIX futures gap monitor
+    |   +-- pm_protocol.py         #   GP co-sign protocol
+    |   +-- queue_state.py         #   Queue governance state machine
+    |   +-- queue_reasoning.py     #   Queue signal aggregation
+    |   +-- queue_persistence.py   #   Queue transition logging
+    |   +-- interfaces.py          #   Position dataclass, Broker ABC
+    +--
+    +-- modules/                   # ARAS Sub-Modules
+    |   +-- deleveraging_risk.py   #   Systemic deleveraging detection
+    |   +-- margin_stress.py       #   Margin pressure (HY+VIX)
+    |   +-- dealer_gamma.py        #   Dealer gamma positioning
+    |   +-- crypto_microstructure.py   # Crypto market health
+    |   +-- pcr_regime.py          #   Put/call ratio regime
+    |   +-- shutdown_risk.py       #   Macro event calendar
+    |   +-- stress_scenarios.py    #   Historical stress scenarios
+    +--
+    +-- reporting/                 # L7 — Reporting & Diagnostics
+    |   +-- daily_monitor.py       #   Daily Monitor v4.0 (LLM)
+    |   +-- eod_snapshot.py        #   EOD 5-field closing check
+    |   +-- proactive_digest.py    #   Monthly LP digest (LLM)
+    |   +-- performance_attribution.py # Module alpha attribution
+    |   +-- audit_log.py           #   Immutable JSONL session log
+    |   +-- monitor_state.py       #   Monitor state types
+    |   +-- regime_history.py      #   Regime transition history
+    |   +-- report_context.py      #   Report context aggregation
+    +--
+    +-- scheduling/                # Job Scheduling
+    |   +-- master_scheduler.py    #   ECS Fargate + APScheduler
+    +--
+    +-- infra/                     # Infrastructure Adapters
+    |   +-- db_adapter.py          #   PostgreSQL + Redis (JSON fallback)
+    +--
+    +-- config/                    # Configuration Constants
+        +-- dshp_config.py         #   DSHP harvest thresholds
+        +-- position_dependency_map.py # CDM entity dependency graph
+        +-- scan_universe.py       #   Systematic scan ticker universe
+```
+
+## Orchestration Flow (main.py)
+
+```
+Phase 0:  Initialization + Overnight Gap Check
+Phase 1:  Multi-Feed Data Ingestion (FRED, Crypto, PMI, SEC, RSS)
+Phase 1.5: Live Portfolio Ingestion (IBKR positions + NAV)
+Phase 2:  Macro Regime (ARAS, RPE, RSS, PDS, Correlation, PCR, Shutdown)
+Phase 2.5: Anticipatory Intelligence (ELVT, JPVI, PFVT, SCCR)
+Phase 3:  Portfolio Maintenance (SSL, DSHP, CDF)
+Phase 4:  Hedge Management (FEM, CAM, CDM, PTRH)
+Phase 5:  Thesis Integrity (CDM, TDC, TRP, PERM)
+Phase 6:  Master Engine Rebalance (MICS, Gate3, PAIE, LAEP execution)
+Phase 6.5: Growth & Re-Entry (ARES, AUP, SLOF)
+Phase 7:  Consolidation & Reporting (Daily Monitor, EOD Snapshot)
 ```

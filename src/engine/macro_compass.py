@@ -73,7 +73,8 @@ def calculate_macro_regime_score(signals: List[SignalRecord], event_state: Optio
 
 
 def get_regime_label(score: float) -> str:
-    if score <= 0.30:
+    """Map composite score to regime label per CLAUDE.md v4.0 REGIME DEFINITIONS."""
+    if score < 0.30:
         return "RISK_ON"
     if score <= 0.50:
         return "WATCH"

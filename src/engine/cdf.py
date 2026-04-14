@@ -84,8 +84,8 @@ def calculate_position_decay(
     if underperformance_pp >= UNDERPERFORMANCE_THRESHOLD:
         # Determine multiplier based on milestones
         if days_underperforming >= EXIT_MILESTONE:
-            current_multiplier = 0.60
-            is_exit_due = True
+            current_multiplier = 0.60  # THB §7.1: Hold at 0.60 — mandatory PM review
+            is_exit_due = False  # Hold, not exit. TRP handles orderly exit (180d + CDF 0.60)
         elif days_underperforming >= 90:
             current_multiplier = 0.60
             next_decay = EXIT_MILESTONE

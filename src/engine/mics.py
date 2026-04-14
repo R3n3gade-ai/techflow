@@ -5,7 +5,7 @@
 import json
 import os
 from dataclasses import dataclass
-from typing import Literal, Dict
+from typing import Literal, Dict, Optional
 
 # --- Data Structures for Inputs ---
 
@@ -61,19 +61,25 @@ def _load_calibration_weights() -> Dict[str, float]:
 
 # --- Core Calculation Function ---
 
-def calculate_mics(inputs: SentinelGateInputs) -> MICSResult:
+def calculate_mics(inputs: SentinelGateInputs, gate3_supplementary: float = 0.0) -> MICSResult:
     """
     Calculates the Model-Implied Conviction Score based on SENTINEL gate data.
     
     This function is the implementation of the formula from ARMS FSD v1.1, Section 11.1,
     augmented with the Phase 2 Conviction Calibration Module (CCM) loop.
+
+    Args:
+        inputs: SENTINEL gate data for the position.
+        gate3_supplementary: Additive adjustment from Phase 2 anticipatory signals (-5 to +5).
     """
 
     # 0. Load (possibly calibrated) weights
     weights = _load_calibration_weights()
 
-    # 1. Normalize Gate 3 score (0-30 -> 0-10)
+    # 1. Normalize Gate 3 score (0-30 -> 0-10), then apply supplementary adjustment
     g3_score = (inputs.gate3_raw_score / 30) * 10
+    # Phase 2 supplementary adjustment (ELVT/JPVI/PFVT/SCCR fed forward into Gate 3)
+    g3_score = max(0.0, min(10.0, g3_score + gate3_supplementary))
 
     # 2. Map Gate 6 source category to score
     source_scores = {'Cat A': 10, 'Cat B': 8, 'Cat C': 5, 'None': 4}

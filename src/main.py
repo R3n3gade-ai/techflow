@@ -67,7 +67,10 @@ from engine.rss_bridge import load_rss_inputs
 from engine.cdf_bridge import load_cdf_inputs
 from engine.macro_compass import calculate_macro_regime_score, get_regime_label
 from engine.bridge_health import collect_bridge_health
-from engine.aras import calculate_aras_ceiling
+from engine.aras import ARASAssessor
+
+# Module-level stateful ARAS — persists hysteresis state across cycles
+_aras_assessor = ARASAssessor()
 from engine.master_engine import compute_target_weights
 from execution.trade_order_generator import generate_rebalance_orders
 from engine.drawdown_sentinel import run_pds_check
@@ -128,6 +131,19 @@ def run_full_arms_cycle():
         triggering_signal='Full integration sweep initiated.'
     ))
 
+    # --- PRE-MARKET: Overnight Futures Gap Check ---
+    from execution.overnight_monitor import run_overnight_monitor
+    overnight_status = run_overnight_monitor()
+    print(f"[OVERNIGHT] {overnight_status.status} — ES: {overnight_status.spx_futures_pct:+.2%}, VIX Futures: {overnight_status.vix_futures_level:.1f}")
+    if overnight_status.status == 'GAP_CRITICAL':
+        print(f"[OVERNIGHT] CRITICAL: {overnight_status.detail}")
+        append_to_log(SessionLogEntry(
+            timestamp=now.isoformat(),
+            action_type='OVERNIGHT_GAP_CRITICAL',
+            triggering_module='OVERNIGHT_MONITOR',
+            triggering_signal=overnight_status.detail,
+        ))
+
     bridge_health = collect_bridge_health()
     for rec in bridge_health:
         print(f"[BRIDGE] {rec.name}: {rec.status} ({rec.path})")
@@ -167,13 +183,15 @@ def run_full_arms_cycle():
     from modules.deleveraging_risk import run_deleveraging_check
     from modules.margin_stress import run_margin_stress_check
     from modules.dealer_gamma import run_dealer_gamma_check
+    from modules.crypto_microstructure import run_crypto_microstructure_check
     
     delev_res = run_deleveraging_check(signals)
     margin_res = run_margin_stress_check(signals)
     gamma_res = run_dealer_gamma_check(signals)
+    crypto_micro_res = run_crypto_microstructure_check(signals)
     
-    if delev_res.status == "ACTIVE" or margin_res.status == "ACTIVE" or gamma_res.regime == "NEGATIVE":
-        print(f"[ARAS SUB-MODULES] High systemic risk detected: Delev:{delev_res.status} Margin:{margin_res.status} Gamma:{gamma_res.regime}")
+    if delev_res.status == "ACTIVE" or margin_res.status == "ACTIVE" or gamma_res.regime == "NEGATIVE" or crypto_micro_res.status == "CRITICAL":
+        print(f"[ARAS SUB-MODULES] High systemic risk detected: Delev:{delev_res.status} Margin:{margin_res.status} Gamma:{gamma_res.regime} CryptoMicro:{crypto_micro_res.status}")
         # In a full system, these feed into the Macro Compass overlay or directly cap the ARAS ceiling.
         # For now, we log their advisory output.
     
@@ -199,10 +217,42 @@ def run_full_arms_cycle():
     if cb_status.is_tripped:
         print("[MAIN] CRITICAL: Circuit Breaker TRIPPED. Autonomous execution halted.")
         # Proceed with diagnostics but no trade execution
-    aras_output = calculate_aras_ceiling(regime_score)
+    aras_output = _aras_assessor.assess(regime_score)
     current_regime = aras_output.regime
     print(f"[ARAS] Computed Regime: {current_regime} ({regime_score:.2f}) -> Ceiling: {aras_output.equity_ceiling_pct:.0%}")
     
+    # 2.05 Correlation Monitor (equity/crypto regime)
+    from execution.correlation_monitor import run_correlation_monitor
+    corr_status = run_correlation_monitor()
+    print(f"[CORR] {corr_status.status} — 30d eq/crypto: {corr_status.equity_crypto_corr_30d:.2f}")
+    if corr_status.status == 'CONTAGION':
+        print(f"[CORR] CONTAGION ALERT: {corr_status.detail}")
+        append_to_log(SessionLogEntry(
+            timestamp=now.isoformat(),
+            action_type='CORRELATION_CONTAGION',
+            triggering_module='CORRELATION_MONITOR',
+            triggering_signal=corr_status.detail,
+        ))
+
+    # 2.06 Put/Call Ratio Regime
+    from modules.pcr_regime import run_pcr_regime_check
+    pcr_status = run_pcr_regime_check(signals=signals)
+    print(f"[PCR] {pcr_status.status} — PCR: {pcr_status.pcr_value:.2f}")
+
+    # 2.07 Shutdown / Macro Event Risk Calendar
+    from modules.shutdown_risk import run_shutdown_risk_check
+    shutdown_status = run_shutdown_risk_check()
+    if shutdown_status.status != 'CLEAR':
+        print(f"[SHUTDOWN] {shutdown_status.status} — {shutdown_status.nearest_event} in {shutdown_status.days_to_event}d")
+        append_to_log(SessionLogEntry(
+            timestamp=now.isoformat(),
+            action_type='SHUTDOWN_RISK_ACTIVE',
+            triggering_module='SHUTDOWN_RISK',
+            triggering_signal=shutdown_status.detail,
+        ))
+    else:
+        print(f"[SHUTDOWN] CLEAR — No imminent macro events")
+
     # 2.1 RSS (Retail Sentiment)
     rss_inputs = load_rss_inputs()
     rss_res = calculate_mc_rss(
@@ -434,7 +484,19 @@ def run_full_arms_cycle():
     print("\n[STEP 5.6] Evaluating Covered Call Overwrites (PERM)...")
     from engine.perm import run_perm_evaluation
     options_market_open = broker.is_connected  # Proxy: if broker connected, assume options accessible
-    perm_orders = run_perm_evaluation(trp_statuses, current_vix=vix_val, options_market_open=options_market_open)
+    # Build position gains dict for PERM primary trigger (30% unrealized gain)
+    position_gains = {}
+    for p in live_positions:
+        if p.sec_type == 'STK' and p.average_cost > 0 and p.quantity > 0:
+            cost_basis = p.average_cost * p.quantity
+            if cost_basis > 0:
+                position_gains[p.ticker] = (p.market_value - cost_basis) / cost_basis
+    perm_orders = run_perm_evaluation(
+        trp_statuses,
+        position_gains=position_gains,
+        current_vix=vix_val,
+        options_market_open=options_market_open,
+    )
     for perm_order in perm_orders:
         print(f"[PERM] Tier 0 Overwrite: SELL_CALL {perm_order.ticker}")
         if not cb_status.is_tripped:
@@ -450,10 +512,18 @@ def run_full_arms_cycle():
 
     mics_results_live = {}
     mics_scores = {}
+    # Import Gate 3 supplementary scoring (Phase 2 anticipatory signals)
+    from intelligence.gate3_supplementary import calculate_gate3_supplementary
     for p in live_equity_positions:
         fem_impact = f"NORMAL->{fem_signal.status}" if fem_signal.status in {'WATCH', 'ALERT'} else 'NORMAL->NORMAL'
         mics_input = build_mics_input_for_ticker(p.ticker, current_regime, fem_impact)
-        mics_result = calculate_mics(mics_input)
+        # Calculate Phase 2 Gate 3 supplementary adjustment (ELVT/JPVI/PFVT/SCCR)
+        try:
+            g3_supp = calculate_gate3_supplementary(p.ticker)
+            g3_adj = g3_supp.adjustment
+        except Exception:
+            g3_adj = 0.0
+        mics_result = calculate_mics(mics_input, gate3_supplementary=g3_adj)
         mics_results_live[p.ticker] = mics_result
         mics_scores[p.ticker] = mics_result.conviction_level
 
@@ -497,11 +567,68 @@ def run_full_arms_cycle():
         if not cb_status.is_tripped:
             ob_entry = order_book.process_request(trim_order, vix_val)
 
+    # --- PAIE PRE-FLIGHT CHECK ---
+    # Runs before execution to validate thesis concentration integrity
+    from engine.paie import deployment_preflight, format_paie_section
+    # Build the deployment queue from pending BUY orders in the order book
+    pending_deployments = {}
+    for entry in order_book.queue:
+        req = entry.request
+        if req.action == 'BUY' and req.quantity_kind == 'WEIGHT_PCT':
+            pending_deployments[req.ticker] = req.quantity
+        elif req.action == 'BUY' and req.quantity_kind == 'NOTIONAL_USD' and nav > 0:
+            pending_deployments[req.ticker] = req.quantity / nav
+
+    if pending_deployments:
+        paie_log = deployment_preflight(
+            queue=pending_deployments,
+            book=live_weights,
+            nav=nav,
+            regime_score=regime_score,
+            cdf_multipliers=cdf_multipliers,
+        )
+        print(f"[PAIE] Pre-Flight Status: {paie_log.status}")
+        if paie_log.all_adjustments:
+            for adj in paie_log.all_adjustments:
+                print(f"[PAIE]   {adj.ticker}: {adj.original_weight:.2%} → {adj.adjusted_weight:.2%} [{adj.rule}]")
+        if paie_log.status == 'BLOCKED':
+            print("[PAIE] BLOCKED — Execution halted. Engineering ticket required.")
+            # Remove blocked BUY orders from the order book
+            order_book.queue = [e for e in order_book.queue if e.request.action != 'BUY']
+        # Persist PAIE section for EOD snapshot inclusion
+        paie_section = format_paie_section(paie_log)
+        paie_state_path = 'achelion_arms/state/last_paie_log.txt'
+        os.makedirs(os.path.dirname(paie_state_path), exist_ok=True)
+        with open(paie_state_path, 'w') as f:
+            f.write(paie_section)
+    else:
+        paie_log = None
+        print("[PAIE] No pending deployments — pre-flight skipped.")
+
+    # --- ESCALATION ENGINE: Pre-execution cumulative loss check ---
+    from execution.escalation_engine import run_escalation_engine
+    esc_status = run_escalation_engine()
+    if esc_status.is_suppressed:
+        print(f"[ESCALATION] SUPPRESSED — Cumulative loss: {esc_status.cumulative_intraday_loss_pct:.2%}. New orders blocked.")
+        append_to_log(SessionLogEntry(
+            timestamp=now.isoformat(),
+            action_type='ESCALATION_SUPPRESS',
+            triggering_module='ESCALATION_ENGINE',
+            triggering_signal=f"Cumulative loss {esc_status.cumulative_intraday_loss_pct:.2%} breached -2.5% threshold",
+        ))
+    elif esc_status.cumulative_intraday_loss_pct < -0.015:
+        print(f"[ESCALATION] WARNING — Cumulative loss: {esc_status.cumulative_intraday_loss_pct:.2%}")
+
     executable_batch = order_book.get_executable_batch()
     if not executable_batch:
         print("[ORDER_BOOK] No executable orders in queue.")
     else:
+        from execution.pm_protocol import require_gp_cosign, check_cosign_status
         for entry in executable_batch:
+            # Block new orders if escalation engine has suppressed
+            if esc_status.is_suppressed and entry.request.action == 'BUY':
+                print(f"[ESCALATION] Blocking BUY {entry.request.ticker} — loss suppression active")
+                continue
             if entry.request.tier == 0:
                 if broker.is_connected:
                     print(f"[ORDER_BOOK] Routing {entry.order_type} Priority {entry.priority} for {entry.request.ticker} (Slippage: {entry.slippage_budget_bps}bps)")
@@ -509,7 +636,16 @@ def run_full_arms_cycle():
                 else:
                     print(f"[MAIN] Broker disconnected. Cannot execute Tier 0 order: {entry.request.action} {entry.request.ticker}")
             else:
-                print(f"[ORDER_BOOK] Skipping Tier 1 order {entry.request.ticker} (Awaiting PM Confirmation in Queue).")
+                # Tier 1: GP co-sign protocol
+                action_id = f"{entry.request.action}_{entry.request.ticker}_{now.strftime('%Y%m%d')}"
+                require_gp_cosign(action_id)
+                cosign = check_cosign_status(action_id)
+                if cosign.is_approved:
+                    print(f"[PM_PROTOCOL] Tier 1 {entry.request.ticker} co-signed by {cosign.signers}. Routing.")
+                    if broker.is_connected:
+                        broker.submit_order(entry.request)
+                else:
+                    print(f"[ORDER_BOOK] Tier 1 {entry.request.ticker} awaiting GP co-sign ({cosign.required_count - len(cosign.signers)} signature(s) needed).")
 
     # --- PHASE 6.5: GROWTH & RE-ENTRY (ARES / AUP) ---
     print("\n[STEP 6.5] Evaluating Growth & Re-Entry...")
@@ -525,7 +661,7 @@ def run_full_arms_cycle():
     from engine.slof import run_slof_manager
     gross_exposure = sum(abs(p.market_value) for p in live_positions)
     current_leverage = gross_exposure / nav if nav > 0 else 1.0
-    slof_status = run_slof_manager(aup_res, current_leverage=current_leverage)
+    slof_status = run_slof_manager(aup_res, current_leverage=current_leverage, regime_score=regime_score)
 
     thesis_signal_map = build_thesis_signal_map(sentinel_workflow.get_all_records())
     thesis_state_by_ticker = {
@@ -608,6 +744,11 @@ def run_full_arms_cycle():
         ModulePanelState(name='SAFETY', status=f'Tier {incap_res.current_safety_tier}', detail=f'Last heartbeat {incap_res.hours_since_heartbeat * 60:.0f} min ago'),
         ModulePanelState(name='SLOF', status='ACTIVE' if slof_status.is_active else 'INACTIVE', detail=f'Leverage {slof_status.current_leverage_ratio:.2f}x / target {slof_status.target_leverage_ratio:.2f}x'),
         ModulePanelState(name='QUEUE_GOV', status=queue_state.headline_status, detail=f'{len(queue_transitions)} transition(s) persisted this cycle'),
+        ModulePanelState(name='OVERNIGHT', status=overnight_status.status, detail=f'ES {overnight_status.spx_futures_pct:+.2%}, VIX Futures {overnight_status.vix_futures_level:.1f}'),
+        ModulePanelState(name='CORR', status=corr_status.status, detail=f'30d eq/crypto: {corr_status.equity_crypto_corr_30d:.2f}'),
+        ModulePanelState(name='PCR', status=pcr_status.status, detail=f'PCR: {pcr_status.pcr_value:.2f}'),
+        ModulePanelState(name='SHUTDOWN', status=shutdown_status.status, detail=shutdown_status.detail[:80]),
+        ModulePanelState(name='ESCALATION', status='SUPPRESSED' if esc_status.is_suppressed else 'NORMAL', detail=f'Cumulative loss: {esc_status.cumulative_intraday_loss_pct:.2%}'),
     ]
 
     queue_counts_note = (
@@ -861,7 +1002,7 @@ def run_eod_snapshot_cycle():
     macro_input_map = {m.name: m.value for m in macro_input}
 
     regime_score = calculate_macro_regime_score(macro_input_map)
-    aras_output = calculate_aras_ceiling(regime_score)
+    aras_output = _aras_assessor.assess(regime_score)
     current_regime = aras_output.regime
 
     # Build target weights from latest MICS/CDF state (reuse saved state)
@@ -876,8 +1017,11 @@ def run_eod_snapshot_cycle():
     confirmation_queue.check_for_timeouts()
     open_items = confirmation_queue.get_open_items()
 
-    # LAEP mode
-    laep_mode = os.environ.get('ARMS_LAEP_MODE', 'NORMAL')
+    # LAEP mode — derive from live VIX via LAEP engine
+    from engine.laep import classify_vix_tier
+    vix_signals = [m for m in macro_input if m.name == 'VIX_INDEX']
+    eod_vix = vix_signals[0].value * 100.0 if vix_signals else 20.0
+    laep_mode = classify_vix_tier(eod_vix).name
 
     # PTRH status
     ptrh_status = 'NORMAL'

@@ -315,12 +315,15 @@ def job_aras_update():
     def _run():
         from data_feeds.pipeline import DataPipeline
         from engine.macro_compass import calculate_macro_regime_score
-        from engine.aras import calculate_aras_ceiling
+        from engine.aras import ARASAssessor
+        # Use module-level singleton for hysteresis persistence across 5-min updates
+        if not hasattr(job_aras_update, '_assessor'):
+            job_aras_update._assessor = ARASAssessor()
         pipeline = DataPipeline()
         macro_input = pipeline.get_macro_inputs()
         macro_map = {m.name: m.value for m in macro_input}
         score = calculate_macro_regime_score(macro_map)
-        aras = calculate_aras_ceiling(score)
+        aras = job_aras_update._assessor.assess(score)
         logger.info(f"ARAS: {aras.regime} ({score:.4f}) → Ceiling {aras.equity_ceiling_pct:.0%}")
 
     _run_with_retry('aras_update', _run)
@@ -369,7 +372,11 @@ def job_systematic_scan():
 def job_kb_ingest():
     """Nightly 2:00 AM CT: Incremental knowledge base ingest."""
     def _run():
-        logger.info("KB ingest placeholder — vector DB not yet configured")
+        from intelligence.kb_ingest import run_kb_ingest
+        result = run_kb_ingest()
+        logger.info(f"KB ingest: {result.documents_processed} docs, "
+                     f"{result.chunks_upserted} chunks upserted, "
+                     f"{result.errors} errors ({result.duration_seconds:.1f}s)")
 
     _run_with_retry('kb_ingest', _run)
 

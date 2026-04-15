@@ -52,8 +52,8 @@ from engine.mics import calculate_mics, SentinelGateInputs
 from engine.sentinel_bridge import build_mics_input_for_ticker
 from engine.sentinel_workflow import sentinel_workflow
 from engine.tdc_state import load_tdc_state
-from engine.cam import CamInputs, calculate_required_notional
-from engine.tail_hedge import run_ptrh_module, OptionsPosition
+from engine.tail_hedge import run_ptrh_module, OptionsPosition, PTRHInputs, calculate_ptrh_required_notional
+from engine.strc import calculate_strc_reserve_deployment, get_total_hedge_notional
 from engine.dshp import run_dshp_check, DefensivePosition
 from engine.cdm import run_cdm_scan, NewsItem
 from engine.tdc import run_thesis_review, run_weekly_tdc_audit
@@ -386,12 +386,10 @@ def run_full_arms_cycle():
     current_equity_pct = sum(p.market_value for p in live_equity_positions) / nav if nav > 0 else 0.0
 
     macro_stress_score = min(1.0, regime_score)
-    # Run CDM early so alert count can inform hedge sizing (CAM)
+    # Run CDM early so alert count can inform hedge sizing
     cdm_alerts = run_cdm_scan(preliminary_event_items) if preliminary_event_items else []
-    cam_in = CamInputs(
-        current_equity_pct=current_equity_pct, regime_score=regime_score,
-        fem_concentration_score=fem_concentration_score, macro_stress_score=macro_stress_score,
-        cdm_active_signals=len(cdm_alerts), nav=nav
+    ptrh_in = PTRHInputs(
+        nav=nav, regime_label=regime_label, regime_score=regime_score
     )
     
     # Map live option positions for PTRH evaluation
@@ -414,7 +412,12 @@ def run_full_arms_cycle():
                 con_id=p.con_id
             ))
         
-    ptrh_res = run_ptrh_module(cam_in, live_puts, broker)
+    # STRC Dynamic Reserve Layer (THB v4.0 FINAL)
+    strc_value = sum(p.market_value for p in live_positions if p.ticker == "STRC") if live_positions else 0.0
+    strc_status = calculate_strc_reserve_deployment(regime_label, strc_value)
+    print(f"[MAIN] STRC reserve: {strc_status.reserve_pct:.0%} deployed (${strc_status.deployed_notional:,.0f}), yield on retained: ${strc_status.annualized_yield_income:,.0f}/yr")
+
+    ptrh_res = run_ptrh_module(ptrh_in, live_puts, broker)
     for order in ptrh_res.generated_orders:
         if cb_status.is_tripped:
             print(f"[MAIN] Execution blocked by Circuit Breaker: {order.ticker}")

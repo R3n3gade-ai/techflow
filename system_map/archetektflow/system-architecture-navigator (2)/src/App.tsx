@@ -97,8 +97,10 @@ export default function App() {
       case "Macro Compass": return <Layers className="w-4 h-4" />;
       case "Intelligence": return <Zap className="w-4 h-4" />;
       case "Risk & Conviction": return <ShieldCheck className="w-4 h-4" />;
+      case "ARAS Sub-Modules": return <ShieldCheck className="w-4 h-4" />;
       case "Execution": return <Settings className="w-4 h-4" />;
       case "Reporting": return <BarChart3 className="w-4 h-4" />;
+      case "Scheduling": return <Clock className="w-4 h-4" />;
       default: return <Info className="w-4 h-4" />;
     }
   };

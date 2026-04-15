@@ -9,7 +9,7 @@ ARAS Sub-Module evaluating extreme systemic shutdown risks including:
   - Known geopolitical event dates (elections, referendums)
 
 Maintains a forward-looking event calendar and computes days-to-event
-risk levels that feed into ARAS posture and CAM ptrh sizing.
+risk levels that feed into ARAS posture and PTRH sizing.
 
 Reference: THB v4.0, Section 10
 """

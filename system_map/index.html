@@ -272,7 +272,7 @@ const NODES = [
   // ── PORTFOLIO CONSTRUCTION ──
   {id:"mics",cat:"portfolio",title:"MICS",sub:"Multi-Input Conviction Score",desc:"The conviction scoring engine. Four weighted gates — Gate 1: Fundamental/Thesis (40%), Gate 2: Technical/Momentum (30%), Gate 3: Sentiment/Intelligence (15%), Gate 4: Macro/Regime (15%). Outputs a 1-10 conviction level per position that feeds into the Master Engine's C² weighting formula.",file:"src/engine/mics.py",deps:["master_engine"]},
   {id:"master_engine",cat:"portfolio",title:"Master Engine",sub:"L4 Portfolio Construction",desc:"The portfolio's brain. Converts MICS conviction scores into Conviction-Squared (C²) target weights: weight = (MICS²) × CDF_decay / total_C². Scales by ARAS equity ceiling, applies SLOF leverage multiplier, and enforces Kevlar position limits. Architecture AB: 58% equity, 20% crypto, 14% defensive, 8% cash.",file:"src/engine/master_engine.py",deps:["kevlar","rebalance","paie"]},
-  {id:"cam",cat:"portfolio",title:"CAM",sub:"Coverage Adequacy Model",desc:"Autonomous PTRH sizer running every 5 minutes. Four multipliers: Regime Score (1.0 + regime_score), Equity Exposure (proportional to equity %), FEM Concentration (activates >65%), Macro Stress (1.0-2.0x from SSL). Base 1.2% NAV floor, max 3.5%, auto-corrects when actual deviates >5% from target.",file:"src/engine/cam.py",deps:["ptrh"]},
+  {id:"ptrh_sizing",cat:"portfolio",title:"PTRH Sizing",sub:"Regime Table Sizing",desc:"PTRH coverage determined by regime table (THB v4.0 FINAL). Base 1.2% NAV. RISK_ON 1.0x, WATCH 1.25x, NEUTRAL 1.25x, DEFENSIVE 1.50x, CRASH 1.50x (hold-no-new-buys). 10-15% OTM QQQ puts. STRC reserve: 0% RISK_ON/WATCH, 50% NEUTRAL, 100% DEFENSIVE/CRASH.",file:"src/engine/tail_hedge.py",deps:["ptrh"]},
   {id:"kevlar",cat:"portfolio",title:"Kevlar",sub:"Position Concentration Limits",desc:"Hard position limits enforced after Master Engine sizing. Maximum 22% single equity position, 48% AI-sector cap (provisional). No minimum floor — MICS conviction drives all sizing. Named after bulletproof material because these limits protect against catastrophic single-name risk.",file:"src/engine/kevlar.py",deps:[]},
   {id:"paie",cat:"portfolio",title:"PAIE",sub:"Portfolio Architecture Integrity",desc:"Pre-execution integrity layer. Validates thesis concentration caps (e.g., AI_POWER_INFRA max 30%) and sizing coherence (positions sharing a thesis tag must respect hierarchy). Three states: CLEARED (execute), ADJUSTED (auto-resize then execute), BLOCKED (halt + engineering ticket). Never asks PM a question.",file:"src/engine/paie.py",deps:["order_book"]},
   {id:"rulebook",cat:"state",title:"Rulebook",sub:"rulebook.json",desc:"Canonical configuration store for PAIE. Contains thesis tag registry (which tickers share which thesis), concentration caps per thesis, sizing hierarchy (trim order when over-concentrated), and conflict resolution protocol. Read-only for PAIE — amendments only through engineering process.",file:"src/data/rulebook.json",deps:["paie"]},
@@ -282,6 +282,7 @@ const NODES = [
   {id:"slof",cat:"hedge",title:"SLOF",sub:"Synthetic Long Offensive",desc:"Offensive leverage instrument. ATM synthetic long (buy call + sell put, same strike, same expiry, delta +1.0). Regime-gated: RISK_ON/WATCH = full size, NEUTRAL = reduced to 75% of authorized notional, DEFENSIVE/CRASH = removed entirely (unwound before equity trims). Amplifies upside without adding cash to the long book.",file:"src/engine/slof.py",deps:["laep"]},
   {id:"perm",cat:"hedge",title:"PERM",sub:"Covered Call Overwrites",desc:"Tier 0 autonomous covered call writing. Two trigger paths: PRIMARY — 30% unrealized gain on a position (lock in profits). SECONDARY — CDF decay multiplier falls to 0.80 or below (monetize dying thesis). Both require VIX >= 18 and options market open. Deduplication prevents both paths firing on same ticker same cycle.",file:"src/engine/perm.py",deps:["laep"]},
   {id:"dshp",cat:"hedge",title:"DSHP",sub:"Defensive Sleeve Harvesting",desc:"Monitors and harvests gains in the 14% defensive sleeve (SGOL, DBMF). SGOL: trim when weight exceeds 20% of sleeve. DBMF: trim when position up 15% or 1.5pp ahead of benchmark. Tier 0 auto-execution with 4-hour veto window before refill. Keeps defensive allocations within bounds.",file:"src/engine/dshp.py",deps:["laep"]},
+  {id:"strc",cat:"hedge",title:"STRC",sub:"Dynamic Reserve Layer",desc:"STRC yield instrument (4% NAV, 11.5% annual yield). Dynamic reserve layer deploys into QQQ puts alongside permanent PTRH. Deployment: 0% RISK_ON/WATCH (locked earning yield), 50% NEUTRAL, 100% DEFENSIVE/CRASH. Both layers are additive. No price harvest trigger (yield only).",file:"src/engine/strc.py",deps:["ptrh"]},
   {id:"ares",cat:"hedge",title:"ARES",sub:"Re-Entry Engine",desc:"4-gate re-entry evaluation for adding to positions after drawdowns. Uses VARES (Volatility-Adjusted Re-Entry Sizing) with 90-day lookback, targeting 0.15-0.35 position size factor with 48-hour minimum between entries. Ensures positions aren't rebuilt too aggressively after being trimmed.",file:"src/engine/ares.py",deps:["master_engine"]},
   {id:"aup",cat:"hedge",title:"AUP",sub:"Asymmetric Upside Protocol",desc:"Identifies conditions for asymmetric risk/reward. Five conditions must align: favorable regime, high average MICS, clean FEM, low RPE deterioration probability, and manageable drawdown. When cleared, authorizes SLOF deployment and enhanced position sizing for the Master Engine.",file:"src/engine/asymmetric_upside.py",deps:["slof"]},
 
@@ -311,16 +312,26 @@ const NODES = [
 // LAYER DEFINITIONS (display order)
 // ═══════════════════════════════════════════════════════════════
 const LAYERS = [
-  {id:"infra",label:"Infrastructure & Cloud",tag:"Foundation",tagColor:"var(--purple)",nodes:["aws_fargate","postgres_rds","redis_cache","llm_gateway"]},
-  {id:"data",label:"Data Sources & Ingestion",tag:"L1",tagColor:"var(--accent2)",nodes:["market_prices","fred_macro","sp_pmi","crypto_micro","vix_options","sec_edgar","news_rss","data_pipeline","event_bridge"]},
-  {id:"regime",label:"Regime Scoring & Sentiment",tag:"L2",tagColor:"var(--accent)",nodes:["macro_compass","aras","rpe","rss_sentiment"]},
-  {id:"risk",label:"Risk Management",tag:"Defense",tagColor:"var(--red)",nodes:["pds","fem","circuit_breaker","ssl","incap"]},
-  {id:"intel",label:"Intelligence & Thesis Integrity",tag:"L3",tagColor:"var(--orange)",nodes:["sentinel","cdm","tdc","cdf","trp","jpvi","sccr","elvt","pfvt"]},
-  {id:"portfolio",label:"Portfolio Construction",tag:"L4",tagColor:"var(--green)",nodes:["mics","master_engine","cam","kevlar","paie","rulebook"]},
-  {id:"hedge",label:"Hedge & Offensive Instruments",tag:"Weapons",tagColor:"var(--yellow)",nodes:["ptrh","slof","perm","dshp","ares","aup"]},
-  {id:"execution",label:"Execution & Order Management",tag:"L5",tagColor:"var(--pink)",nodes:["laep","order_book","strategic_queue","confirm_queue","broker_api","rebalance"]},
-  {id:"reporting",label:"Reporting & Monitoring",tag:"Output",tagColor:"#a78bfa",nodes:["daily_monitor","eod_snapshot","session_log","perf_attrib"]},
-  {id:"misc",label:"Simulation & State",tag:"Support",tagColor:"var(--text3)",nodes:["sim_engine","bridge_configs","portfolio_snapshot"]},
+  {id:"infra",label:"Infrastructure & Cloud",tag:"Foundation",tagColor:"var(--purple)",nodes:["aws_fargate","postgres_rds","redis_cache","llm_gateway"],
+   desc:"The foundation layer that keeps ARMS running. This is the cloud hardware and services — the servers that run the system every 5 minutes during market hours, the database that remembers everything the system has ever done, the cache that keeps it fast, and the AI connection that powers the written reports. Think of it as the building the system lives in. Without this layer, nothing else works — but it doesn't make any investment decisions on its own."},
+  {id:"data",label:"Data Sources & Ingestion",tag:"L1",tagColor:"var(--accent2)",nodes:["market_prices","fred_macro","sp_pmi","crypto_micro","vix_options","sec_edgar","news_rss","data_pipeline","event_bridge"],
+   desc:"The system's senses — everything it uses to see what's happening in the world. Stock prices, bond market stress levels, economic health readings, crypto prices, volatility levels, and insider trading filings all flow in here. The L1 Pipeline collects all of this raw data, cleans it up, and passes it downstream. The Event Bridge watches for major news events (wars, policy changes, crises) and flags them. If the data layer goes dark, the system stops making decisions until it can see again."},
+  {id:"regime",label:"Regime Scoring & Sentiment",tag:"L2",tagColor:"var(--accent)",nodes:["macro_compass","aras","rpe","rss_sentiment"],
+   desc:"The system's risk thermometer. This layer takes all the raw data from L1 and boils it down to one simple question: how dangerous is the market right now? The Macro Compass produces a score from 0 (all clear) to 1 (maximum danger). ARAS converts that score into a regime label — RISK_ON, WATCH, NEUTRAL, DEFENSIVE, or CRASH — with built-in safeguards against flipping back and forth too quickly. MC-RSS adds a contrarian check by measuring retail investor sentiment. This layer is the highest authority on how much risk the portfolio is allowed to take."},
+  {id:"risk",label:"Risk Management",tag:"Defense",tagColor:"var(--red)",nodes:["pds","fem","circuit_breaker","ssl","incap"],
+   desc:"The guardrails that prevent catastrophic losses. PDS watches the portfolio's drawdown from its peak and automatically forces the system to sell if losses hit -12% or -18%. FEM makes sure the portfolio isn't too concentrated in one type of stock. The Circuit Breaker is the emergency stop button — if markets are in freefall, it halts all trading entirely. SSL runs stress scenarios to check how the portfolio would handle hypothetical crises. Incapacitation monitors whether the PM is reachable and adjusts autonomy levels accordingly. These modules can override every other part of the system."},
+  {id:"intel",label:"Intelligence & Thesis Integrity",tag:"L3",tagColor:"var(--orange)",nodes:["sentinel","cdm","tdc","cdf","trp","jpvi","sccr","elvt","pfvt"],
+   desc:"The research department. Every stock in the portfolio has a thesis — a reason for owning it. This layer continuously checks whether those reasons are still valid. SENTINEL watches for news and events. CDM tracks how events affect conviction across related stocks. TDC scores each position's thesis health. CDF applies a time-based decay — if nobody has reaffirmed a thesis in 45+ days, the system starts trimming automatically. TRP handles the final exit when a thesis is truly dead. The Phase 2 intelligence modules (JPVI, SCCR, ELVT, PFVT) add deeper research signals like hiring trends and patent activity."},
+  {id:"portfolio",label:"Portfolio Construction",tag:"L4",tagColor:"var(--green)",nodes:["mics","master_engine","cam","kevlar","paie","rulebook"],
+   desc:"The brain that decides how much to own of each stock. MICS scores conviction on a 1-10 scale using four inputs: fundamentals, momentum, sentiment, and macro environment. The Master Engine converts those scores into target portfolio weights using a Conviction-Squared formula — higher conviction stocks get disproportionately more capital. Kevlar enforces hard limits so no single position gets dangerously large. PAIE validates that thesis concentration caps aren't violated. The Rulebook holds the configuration rules. Architecture AB target: 58% stocks, 20% crypto, 14% defensive, 8% cash."},
+  {id:"hedge",label:"Hedge & Offensive Instruments",tag:"Weapons",tagColor:"var(--yellow)",nodes:["ptrh","slof","perm","dshp","ares","aup"],
+   desc:"The portfolio's offense and defense toolkit — options and special strategies. PTRH is the always-on insurance policy (QQQ puts that pay off in crashes). SLOF is the accelerator (synthetic leverage that amplifies gains in calm markets). PERM writes covered calls on winners to generate income. DSHP harvests gains from the defensive sleeve when gold or managed futures run hot. ARES is the re-entry engine — after the system sells during a scare, ARES carefully rebuilds positions in three measured tranches. AUP identifies moments of asymmetric opportunity where risk/reward is tilted heavily in our favor."},
+  {id:"execution",label:"Execution & Order Management",tag:"L5",tagColor:"var(--pink)",nodes:["laep","order_book","strategic_queue","confirm_queue","broker_api","rebalance"],
+   desc:"The hands that actually place the trades. LAEP adjusts how trades are executed based on market volatility — in calm markets, it uses precise limit orders; in panics, it switches to patient algorithms or halts entirely. The Order Book collects all trade requests from every module and sorts them by priority. The Strategic Queue holds pre-loaded orders that fire when conditions are met. The Confirmation Queue gives the PM a window to review significant trades before they execute. The Broker API connects to Interactive Brokers or Alpaca to actually submit the orders. The Trade Generator converts target weights into specific share quantities."},
+  {id:"reporting",label:"Reporting & Monitoring",tag:"Output",tagColor:"#a78bfa",nodes:["daily_monitor","eod_snapshot","session_log","perf_attrib"],
+   desc:"The system's voice — how it communicates what it's doing and why. The Daily Monitor is the morning briefing: regime status, market drivers, portfolio position, and what the system plans to do today. The EOD Snapshot is the closing report at 2:50 PM CT with everything that happened. The Session Log is the permanent audit trail — every action every module has ever taken, immutably recorded. Performance Attribution breaks down where returns are coming from and which positions are winning or losing. The PM reads these reports; the system writes them."},
+  {id:"misc",label:"Simulation & State",tag:"Support",tagColor:"var(--text3)",nodes:["sim_engine","bridge_configs","portfolio_snapshot"],
+   desc:"The testing lab and configuration files. The Historical Replay engine lets us run the entire system against past market data to see how it would have performed — this is the backtester that produces our performance reports. Bridge Configs are the template files that connect live market data to the engine modules. The Portfolio Snapshot is the PM's canonical view of what the portfolio should look like — the source of truth for target weights, thesis flags, and position parameters."},
 ];
 
 // ═══════════════════════════════════════════════════════════════
@@ -360,12 +371,18 @@ function renderAll(){
     const hdr=document.createElement('div');
     hdr.className='layer';
     hdr.innerHTML=`
-      <div class="layer-header">
+      <div class="layer-header" style="cursor:pointer" title="Click for section summary">
         <span class="layer-label">${layer.label}</span>
         <span class="layer-line"></span>
         <span class="layer-tag" style="background:${layer.tagColor}22;color:${layer.tagColor};border:1px solid ${layer.tagColor}44">${layer.tag}</span>
       </div>
     `;
+
+    // Click on layer header to show container summary
+    hdr.querySelector('.layer-header').addEventListener('click',(e)=>{
+      e.stopPropagation();
+      openLayerPanel(layer);
+    });
 
     const grid=document.createElement('div');
     grid.className='node-grid';
@@ -454,6 +471,55 @@ function openPanel(nid){
   const activeEl=document.querySelector(`.node[data-id="${nid}"]`);
   if(activeEl)activeEl.classList.add('active');
 
+  panel.classList.add('open');
+  overlay.classList.add('open');
+}
+
+function openLayerPanel(layer){
+  currentNodeId=null;
+
+  // Count module statuses within this container
+  const counts={complete:0,inProgress:0,notStarted:0,total:layer.nodes.length};
+  layer.nodes.forEach(nid=>{
+    const ns=getNodeState(nid);
+    if(ns.status==='complete')counts.complete++;
+    else if(ns.status==='in-progress')counts.inProgress++;
+    else counts.notStarted++;
+  });
+
+  document.getElementById('panelTags').innerHTML=
+    `<span class="panel-tag" style="background:${layer.tagColor}22;color:${layer.tagColor};border:1px solid ${layer.tagColor}44">${layer.tag}</span>`+
+    `<span class="panel-status-tag s-in-progress">SECTION</span>`;
+
+  document.getElementById('panelTitle').textContent=layer.label;
+  document.getElementById('panelId').textContent=`${counts.total} modules | ${counts.complete} complete | ${counts.inProgress} in-progress | ${counts.notStarted} not started`;
+  document.getElementById('panelDesc').textContent=layer.desc||'No description available.';
+  document.getElementById('panelFile').textContent='';
+
+  // Show contained modules as dependencies
+  const depSection=document.getElementById('panelDepsSection');
+  const depList=document.getElementById('panelDeps');
+  depSection.style.display='';
+  depList.innerHTML='<li style="color:var(--accent2);pointer-events:none;font-weight:700">Modules in this section:</li>'+
+    layer.nodes.map(nid=>{
+      const n=nodeMap[nid];
+      const ns=getNodeState(nid);
+      const dot=ns.status==='complete'?'&#9679;':ns.status==='in-progress'?'&#9681;':'&#9675;';
+      const col=ns.status==='complete'?'var(--green)':ns.status==='in-progress'?'var(--yellow)':'var(--text3)';
+      return n?`<li data-id="${nid}" style="color:${col}">${dot} ${n.title} <span style="opacity:0.5;font-size:11px">${n.sub}</span></li>`:'';
+    }).join('');
+  depList.querySelectorAll('li[data-id]').forEach(li=>{
+    li.addEventListener('click',e=>{
+      e.stopPropagation();
+      openPanel(li.dataset.id);
+    });
+  });
+
+  // Hide status buttons and notes for layer view
+  document.querySelectorAll('.status-btn').forEach(btn=>btn.classList.remove('selected'));
+  document.getElementById('panelNotes').value='';
+
+  document.querySelectorAll('.node').forEach(el=>el.classList.remove('active'));
   panel.classList.add('open');
   overlay.classList.add('open');
 }

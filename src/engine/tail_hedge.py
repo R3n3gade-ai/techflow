@@ -1,26 +1,59 @@
-import ib_insync as ibi
 """
 ARMS Module: Permanent Tail Risk Hedge (PTRH) Full Automation
 
 This module provides the full, Tier-0 autonomous operation for the PTRH. It
-integrates with the Coverage Adequacy Model (CAM) to determine required coverage
-and executes all necessary actions (rolls, resizing, drift correction) without
-human intervention.
+uses the regime-dependent sizing table from THB v4.0 FINAL to determine required
+coverage and executes all necessary actions (rolls, resizing, drift correction)
+without human intervention.
 
 "Silence is trust in the architecture."
 
-Reference: ARMS Module Specification — PTRH Automation + DSHP, Section 1
-Reference: ARMS Addendum 4 — Governing Principle + PTRH Coverage Adequacy Model
+Reference: ARMS THB v4.0 FINAL — Section 6 (PTRH)
 """
 
 import datetime
 from dataclasses import dataclass, field
 from typing import List, Literal, Optional, Tuple, Dict
 # --- Internal Imports ---
-from engine.cam import calculate_required_notional, CamInputs
 from execution.order_request import OrderRequest
 from execution.interfaces import Broker
 from reporting.audit_log import SessionLogEntry, append_to_log
+
+# --- PTRH Regime Sizing Table (THB v4.0 FINAL, Section 6.2) ---
+# Base coverage: 1.2% NAV
+# Strike: 10-15% OTM QQQ puts (target ~12.5%)
+PTRH_BASE_COVERAGE_PCT = 0.012
+
+# Regime multipliers (THB v4.0 FINAL — supersedes all prior drafts)
+# CRASH: 1.50x HOLD — no new buys (implied vol too expensive)
+PTRH_REGIME_TABLE = {
+    "RISK_ON":    {"multiplier": 1.00, "coverage_pct": 0.012, "strc_reserve": 0.0},
+    "WATCH":      {"multiplier": 1.25, "coverage_pct": 0.015, "strc_reserve": 0.0},
+    "NEUTRAL":    {"multiplier": 1.25, "coverage_pct": 0.015, "strc_reserve": 0.50},
+    "DEFENSIVE":  {"multiplier": 1.50, "coverage_pct": 0.018, "strc_reserve": 1.00},
+    "CRASH":      {"multiplier": 1.50, "coverage_pct": 0.018, "strc_reserve": 1.00},
+}
+
+
+@dataclass
+class PTRHInputs:
+    """
+    Inputs required for PTRH sizing (replaces CAM).
+    Uses simple regime table lookup per THB v4.0 FINAL.
+    """
+    nav: float
+    regime_label: str  # RISK_ON, WATCH, NEUTRAL, DEFENSIVE, CRASH
+    regime_score: float
+
+
+def calculate_ptrh_required_notional(inputs: PTRHInputs) -> float:
+    """
+    Calculate required PTRH put notional using regime table.
+    THB v4.0 FINAL: CAM removed from scope. Simple regime multiplier only.
+    """
+    entry = PTRH_REGIME_TABLE.get(inputs.regime_label, PTRH_REGIME_TABLE["RISK_ON"])
+    coverage_pct = entry["coverage_pct"]
+    return coverage_pct * inputs.nav
 
 # --- Data Structures ---
 
@@ -140,6 +173,7 @@ def _resolve_delta_primary_strike(broker: Broker, ticker: str, target_delta: flo
         today = datetime.date.today()
         
         # Pull live spot price to narrow options chain
+        import ib_insync as ibi
         underlying = getattr(broker, 'ib', None).qualifyContracts(ibi.Stock(ticker, 'SMART', 'USD'))[0] if getattr(broker, 'ib', None) else None
         if not underlying:
             return None
@@ -170,8 +204,8 @@ def _resolve_delta_primary_strike(broker: Broker, ticker: str, target_delta: flo
             if not valid_expiries:
                 continue
 
-            # Narrow to strikes roughly near ATM to deep OTM
-            narrowed = [c for c in valid_expiries if spot_price * 0.80 <= float(c.strike) <= spot_price * 1.05]
+        # Narrow to strikes in 10-15% OTM range per THB v4.0 FINAL
+            narrowed = [c for c in valid_expiries if spot_price * 0.85 <= float(c.strike) <= spot_price * 0.90]
             tickers = broker.get_market_data(narrowed, require_greeks=True)
             
             for t in tickers:
@@ -263,25 +297,30 @@ def _estimate_contracts_for_notional(target_notional: float, contract: Optional[
 
 # --- Main Logic Module ---
 
-def run_ptrh_module(cam_inputs: CamInputs, 
+def run_ptrh_module(ptrh_inputs: PTRHInputs, 
                     current_positions: List[OptionsPosition],
                     broker: Optional[Broker] = None,
                     dual_risk_override_pct: Optional[float] = None) -> PTRHStatus:
     """
     Runs the full Tier-0 PTRH management logic using the Addendum 6 Delta-Primary architecture.
+    THB v4.0 FINAL: Uses regime table sizing (CAM removed from scope).
     """
     alerts = []
     generated_orders = []
     last_action = "NONE"
     
-    # 1. Determine target notional using CAM
-    required_notional = calculate_required_notional(cam_inputs)
+    # 1. Determine target notional using regime table (replaces CAM)
+    required_notional = calculate_ptrh_required_notional(ptrh_inputs)
     if dual_risk_override_pct is not None:
-        required_notional = cam_inputs.nav * dual_risk_override_pct
+        required_notional = ptrh_inputs.nav * dual_risk_override_pct
+
+    # CRASH regime: hold existing, no new buys
+    regime_entry = PTRH_REGIME_TABLE.get(ptrh_inputs.regime_label, PTRH_REGIME_TABLE["RISK_ON"])
+    is_crash = ptrh_inputs.regime_label == "CRASH"
     
     actual_notional = sum(p.notional_value for p in current_positions)
-    target_pct = required_notional / cam_inputs.nav if cam_inputs.nav > 0 else 0
-    actual_pct = actual_notional / cam_inputs.nav if cam_inputs.nav > 0 else 0
+    target_pct = required_notional / ptrh_inputs.nav if ptrh_inputs.nav > 0 else 0
+    actual_pct = actual_notional / ptrh_inputs.nav if ptrh_inputs.nav > 0 else 0
     drift = (actual_pct / target_pct) - 1 if target_pct > 0 else 0
     
     # 2. Addendum 6 Delta-Primary Strike Selection Simulation
@@ -332,33 +371,34 @@ def run_ptrh_module(cam_inputs: CamInputs,
         if is_under_hedged or is_over_hedged:
             delta_notional = required_notional - actual_notional
             action = 'BUY_PUT' if delta_notional > 0 else 'SELL_PUT'
-            signal = f"Drift Correction: actual {actual_pct:.2%} vs target {target_pct:.2%}. Delta-Optimal Strike Selected. Delta: ${abs(delta_notional):,.2f}"
-            
-            # If we are BUYING puts to increase coverage, we need a resolved live contract.
-            # If we are SELLING puts to decrease coverage, we sell existing contracts.
-            active_contract = target_contract if action == 'BUY_PUT' else (current_positions[0] if current_positions else target_contract)
 
-            if active_contract is None:
-                alerts.append("PTRH drift correction required, but no live contract was available for execution.")
+            # THB v4.0 FINAL: CRASH regime = hold existing, no new buys
+            if is_crash and action == 'BUY_PUT':
+                alerts.append("CRASH regime: implied vol too expensive for new puts. Holding existing coverage.")
             else:
-                if action == 'BUY_PUT':
-                    contract_qty = _estimate_contracts_for_notional(abs(delta_notional), active_contract)
-                else:
-                    contract_qty = max(1, int(abs(active_contract.contracts)))
+                signal = f"Drift Correction: actual {actual_pct:.2%} vs target {target_pct:.2%}. Delta-Optimal Strike Selected. Delta: ${abs(delta_notional):,.2f}"
+                active_contract = target_contract if action == 'BUY_PUT' else (current_positions[0] if current_positions else target_contract)
 
-                if contract_qty <= 0:
-                    alerts.append("PTRH drift correction sizing failed; no executable contract count derived.")
+                if active_contract is None:
+                    alerts.append("PTRH drift correction required, but no live contract was available for execution.")
                 else:
-                    generated_orders.append(_submit_ptrh_order(action, contract_qty, 'CONTRACTS', signal, contract=active_contract))
-                    last_action = "CORRECT_DRIFT"
+                    if action == 'BUY_PUT':
+                        contract_qty = _estimate_contracts_for_notional(abs(delta_notional), active_contract)
+                    else:
+                        contract_qty = max(1, int(abs(active_contract.contracts)))
+
+                    if contract_qty <= 0:
+                        alerts.append("PTRH drift correction sizing failed; no executable contract count derived.")
+                    else:
+                        generated_orders.append(_submit_ptrh_order(action, contract_qty, 'CONTRACTS', signal, contract=active_contract))
+                        last_action = "CORRECT_DRIFT"
     
     # 5. Prepare Status for Monitoring
     nearest_dte = min([p.dte for p in current_positions]) if current_positions else 0
-    approx_multiplier = 1.0 + cam_inputs.regime_score 
 
     status = PTRHStatus(
-        regime=str(cam_inputs.regime_score), 
-        multiplier=approx_multiplier,
+        regime=ptrh_inputs.regime_label, 
+        multiplier=regime_entry["multiplier"],
         target_notional_pct=target_pct,
         actual_notional_pct=actual_pct,
         coverage_drift_pct=drift * 100,
@@ -381,13 +421,10 @@ if __name__ == '__main__':
     print("ARMS PTRH Module Active (Simulation Mode)")
     
     # Simulate a RISK_ON scenario
-    test_inputs = CamInputs(
-        current_equity_pct=1.0,
+    test_inputs = PTRHInputs(
+        nav=50_000_000,
+        regime_label="RISK_ON",
         regime_score=0.25,
-        fem_concentration_score=0.40,
-        macro_stress_score=0.20,
-        cdm_active_signals=0,
-        nav=50_000_000
     )
     
     # Existing put at 35 DTE, correct sizing

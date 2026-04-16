@@ -1,5 +1,5 @@
 ﻿# Achelion ARMS — Codebase Map
-**Last Updated: April 13, 2026**
+**Last Updated: April 16, 2026**
 
 ```
 techflow/
@@ -28,10 +28,11 @@ techflow/
     +-- run_daily_report.py        # Standalone daily report runner
     +--
     +-- data_feeds/                # L1 — Market Data Ingestion
-    |   +-- pipeline.py            #   Orchestrates all feed plugins
-    |   +-- fred_plugin.py         #   FRED API (VIX, 10Y, HY spread, PMI)
-    |   +-- crypto_plugin.py       #   IBKR CME futures + Coinbase spot
-    |   +-- pmi_plugin.py          #   S&P Global / ISM PMI scraping
+    |   +-- pipeline.py            #   Orchestrates 4 production feed plugins
+    |   +-- fred_plugin.py         #   FRED API (VIX, 10Y, HY, T10Y2Y, PCR, Margin Debt)
+    |   +-- crypto_plugin.py       #   IBKR CME futures + Coinbase spot + CBOE SKEW
+    |   +-- coinglass_feed.py      #   CoinGlass (funding, OI, liquidations, long/short, BTC price)
+    |   +-- pmi_plugin.py          #   ISM Manufacturing PMI from CSV bridge
     |   +-- sec_edgar_feed.py      #   SEC EDGAR Form 4 insider trades
     |   +-- sec_edgar_plugin.py    #   SEC EDGAR (requests/BS4 variant)
     |   +-- news_rss_feed.py       #   Public RSS news ingestion
@@ -43,7 +44,7 @@ techflow/
     +--
     +-- engine/                    # L2-L4 — Core Risk & Conviction Engines
     |   +-- macro_compass.py       #   L2: Regime scoring (0.0-1.0)
-    |   +-- aras.py                #   L3: ARAS regime -> equity ceiling
+    |   +-- aras.py                #   L3: ARAS regime -> ceiling + EDR advisory
     |   +-- master_engine.py       #   L4: Target weight construction
     |   +-- mics.py                #   MICS conviction scoring formula
     |   +-- kevlar.py              #   22% single-name concentration cap

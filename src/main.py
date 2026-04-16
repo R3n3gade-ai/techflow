@@ -190,10 +190,17 @@ def run_full_arms_cycle():
     gamma_res = run_dealer_gamma_check(signals)
     crypto_micro_res = run_crypto_microstructure_check(signals)
     
-    if delev_res.status == "ACTIVE" or margin_res.status == "ACTIVE" or gamma_res.regime == "NEGATIVE" or crypto_micro_res.status == "CRITICAL":
-        print(f"[ARAS SUB-MODULES] High systemic risk detected: Delev:{delev_res.status} Margin:{margin_res.status} Gamma:{gamma_res.regime} CryptoMicro:{crypto_micro_res.status}")
-        # In a full system, these feed into the Macro Compass overlay or directly cap the ARAS ceiling.
-        # For now, we log their advisory output.
+    print(f"[EDR] Delev:{delev_res.status}({delev_res.velocity_score:.2f}) Margin:{margin_res.status} Gamma:{gamma_res.regime} CryptoMicro:{crypto_micro_res.status}({crypto_micro_res.stress_score:.2f})")
+
+    if delev_res.status == "ACTIVE" or margin_res.status == "ACTIVE" or \
+       gamma_res.regime == "NEGATIVE" or crypto_micro_res.status == "CRITICAL":
+        print(f"[ARAS SUB-MODULES] High systemic risk detected.")
+        append_to_log(SessionLogEntry(
+            timestamp=now.isoformat(),
+            action_type='EDR_HIGH_RISK',
+            triggering_module='EDR_SUBMODULES',
+            triggering_signal=f"Delev:{delev_res.status} Margin:{margin_res.status} Gamma:{gamma_res.regime} CryptoMicro:{crypto_micro_res.status}",
+        ))
     
     vix_raw = next((s.value for s in signals if s.signal_type == 'VIX_INDEX'), None)
     require_live(vix_raw is not None, "VIX_INDEX signal missing from data pipeline.")
@@ -217,9 +224,24 @@ def run_full_arms_cycle():
     if cb_status.is_tripped:
         print("[MAIN] CRITICAL: Circuit Breaker TRIPPED. Autonomous execution halted.")
         # Proceed with diagnostics but no trade execution
-    aras_output = _aras_assessor.assess(regime_score)
+    aras_output = _aras_assessor.assess(
+        regime_score,
+        delev_score=delev_res.velocity_score,
+        micro_score=crypto_micro_res.stress_score,
+    )
     current_regime = aras_output.regime
-    print(f"[ARAS] Computed Regime: {current_regime} ({regime_score:.2f}) -> Ceiling: {aras_output.equity_ceiling_pct:.0%}")
+    regime_label = current_regime
+    print(f"[ARAS] Computed Regime: {current_regime} ({aras_output.score:.2f}) -> Ceiling: {aras_output.equity_ceiling_pct:.0%}")
+    if aras_output.edr_advisory_total > 0:
+        print(f"[ARAS] EDR advisory: +{aras_output.edr_advisory_total:.3f} to composite (base={regime_score:.2f} -> adjusted={aras_output.score:.2f})")
+    if aras_output.dual_edr_alert:
+        print(f"[ARAS] *** DUAL EDR ALERT *** Delev={delev_res.velocity_score:.3f} CryptoMicro={crypto_micro_res.stress_score:.3f}")
+        append_to_log(SessionLogEntry(
+            timestamp=now.isoformat(),
+            action_type='DUAL_EDR_ALERT',
+            triggering_module='ARAS',
+            triggering_signal=f"Delev={delev_res.velocity_score:.3f} CryptoMicro={crypto_micro_res.stress_score:.3f} combined_advisory=+{aras_output.edr_advisory_total:.3f} regime_base={regime_score:.3f} regime_adjusted={aras_output.score:.3f}",
+        ))
     
     # 2.05 Correlation Monitor (equity/crypto regime)
     from execution.correlation_monitor import run_correlation_monitor

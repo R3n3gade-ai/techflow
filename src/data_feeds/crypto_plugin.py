@@ -299,29 +299,70 @@ class CryptoPlugin(FeedPlugin):
                 print(f"[{self.name}] Stablecoin peg fetch failed for {product_id}: {exc}")
 
     # ------------------------------------------------------------------ #
+    #  CBOE SKEW Index via IBKR market data
+    # ------------------------------------------------------------------ #
+
+    def _fetch_cboe_skew(self, records: List[SignalRecord], now: str) -> None:
+        """Fetch CBOE SKEW index from IBKR (it's a CBOE-listed index)."""
+        if not self._connected or self._ib is None:
+            return
+
+        try:
+            skew_contract = ibi.Index("SKEW", "CBOE", "USD")
+            self._ib.qualifyContracts(skew_contract)
+            tickers = self._ib.reqTickers(skew_contract)
+            if not tickers:
+                print(f"[{self.name}] No SKEW data from IBKR")
+                return
+
+            skew_val = tickers[0].marketPrice()
+            if skew_val is None or math.isnan(skew_val) or skew_val <= 0:
+                skew_val = tickers[0].close
+            if skew_val is None or math.isnan(skew_val) or skew_val <= 0:
+                print(f"[{self.name}] No valid SKEW price from IBKR")
+                return
+
+            records.append(SignalRecord(
+                ticker="MACRO",
+                signal_type="CBOE_SKEW",
+                value=skew_val / 200.0,  # 100-200 range → 0.5-1.0
+                raw_value=skew_val,
+                source=self.name,
+                timestamp=now,
+                cost_tier='FREE',
+            ))
+            print(f"[{self.name}] CBOE SKEW: {skew_val:.1f}")
+
+        except Exception as exc:
+            print(f"[{self.name}] SKEW fetch failed: {exc}")
+
+    # ------------------------------------------------------------------ #
     #  Main feed entry point
     # ------------------------------------------------------------------ #
 
     def fetch(self) -> List[SignalRecord]:
-        print(f"[{self.name}] Fetching crypto microstructure via IBKR + Coinbase...")
+        print(f"[{self.name}] Fetching live market data via IBKR + Coinbase...")
         records: List[SignalRecord] = []
         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
-        # 1. Connect to IBKR for CME futures data
+        # 1. Connect to IBKR
         ib_ok = self._ensure_ib_connection()
         if not ib_ok:
-            print(f"[{self.name}] WARNING: IBKR unavailable — crypto futures signals will be missing.")
+            print(f"[{self.name}] WARNING: IBKR unavailable — futures + SKEW signals will be missing.")
 
-        # 2. Futures basis (funding rate proxy) from CME via IBKR
+        # 2. CME futures basis (funding rate proxy)
         self._fetch_futures_basis(records, now)
 
-        # 3. Open interest / volume stress from CME via IBKR
+        # 3. CME open interest / volume stress
         self._fetch_open_interest(records, now)
 
-        # 4. Stablecoin pegs from Coinbase (always available in US)
+        # 4. CBOE SKEW index
+        self._fetch_cboe_skew(records, now)
+
+        # 5. Stablecoin pegs from Coinbase
         self._fetch_stablecoin_pegs(records, now)
 
-        # 5. Disconnect if we opened our own connection
+        # 6. Disconnect IBKR
         if self._ib is not None and self._ib.isConnected():
             try:
                 self._ib.disconnect()

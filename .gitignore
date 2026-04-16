@@ -4,8 +4,16 @@ __pycache__/
 *$py.class
 .venv/
 .env
+
+# Runtime logs & state
 *.jsonl
 achelion_arms/logs/
-*.png
 achelion_arms/monitor_examples/
 achelion_arms/achelion_arms/logs/
+
+# Binary / generated artifacts
+*.png
+*.parquet
+node_modules/
+dist/
+*.zip

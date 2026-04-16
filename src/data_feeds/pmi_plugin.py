@@ -1,89 +1,104 @@
 """
-ARMS Data Feeds: S&P Global / ISM PMI Plugin
+ARMS Data Feeds: ISM Manufacturing PMI Plugin
 
 Production rule: do not emit fabricated PMI values.
-Fetches live S&P Global / ISM PMI macro data via public scraping if API 
-is not available, fulfilling the FSD "Priority 1" requirement.
+
+Development mode: reads from CSV bridge file (data/pmi_temp_bridge.csv)
+updated monthly from the ISM Manufacturing PMI Report (ismworld.org).
+
+Production upgrade path: swap to Trading Economics / FMP / S&P Global API
+by changing only the _fetch_from_api() method. The SignalRecord contract
+and downstream consumers remain unchanged.
+
+CSV format expected:
+  Date,Value,% Change vs Last Year
+  2026-03-01,52.7,7.6
 """
 
+import csv
 import os
-import requests
-import json
-import datetime
-from typing import List
+import logging
+from datetime import datetime, timezone
+from typing import List, Optional
 
 from data_feeds.interfaces import FeedPlugin, SignalRecord
 
+logger = logging.getLogger(__name__)
+
 STRICT_LIVE_MODE = os.environ.get('ARMS_STRICT_LIVE', '1').strip().lower() not in {'0', 'false', 'no'}
+
+# CSV bridge paths — checked in order
+_CSV_PATHS = [
+    os.environ.get('ARMS_PMI_CSV', ''),
+    os.path.join('data', 'pmi_temp_bridge.csv'),
+    os.path.join('achelion_arms', 'state', 'pmi_latest.csv'),
+]
+
 
 class PmiPlugin(FeedPlugin):
     @property
     def name(self) -> str:
-        return "SP_GLOBAL_PMI"
+        return "ISM_PMI"
+
+    def _read_csv_bridge(self) -> Optional[dict]:
+        """Read the most recent PMI value from the CSV bridge file."""
+        for path in _CSV_PATHS:
+            if not path or not os.path.exists(path):
+                continue
+            try:
+                with open(path, 'r', encoding='utf-8') as f:
+                    reader = csv.DictReader(f)
+                    rows = list(reader)
+                if not rows:
+                    continue
+                # First data row is the most recent (descending order)
+                row = rows[0]
+                value = float(row.get('Value', row.get('value', '')))
+                date_str = row.get('Date', row.get('date', ''))
+                logger.info("[%s] Read PMI %.1f from %s (date: %s)", self.name, value, path, date_str)
+                return {'value': value, 'date': date_str, 'path': path}
+            except Exception as e:
+                logger.warning("[%s] Failed to parse %s: %s", self.name, path, e)
+                continue
+        return None
 
     def fetch(self) -> List[SignalRecord]:
-        print(f"[{self.name} Plugin] Fetching live PMI data...")
-        records: List[SignalRecord] = []
-        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        
-        # Free API for basic macro indicators
-        url = "https://api.tradingeconomics.com/economic-calendar"
-        # Since TradingEconomics API is paid, and Investing/S&P blocks scrapers, 
-        # we'll build a direct parsing mechanism from the St. Louis Fed's public site
-        # since their API blocked ISM but sometimes the HTML page has the headline.
-        
-        url = "https://fred.stlouisfed.org/series/NAPM"
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        
-        raw_val = None
-        try:
-            r = requests.get(url, headers=headers, timeout=10)
-            r.raise_for_status()
-            
-            # The value is usually inside a meta tag or span with class 'series-meta-observation-value'
-            import re
-            match = re.search(r'class="series-meta-observation-value">\s*([\d\.]+)\s*</span>', r.text)
-            if match:
-                raw_val = float(match.group(1))
-                
-            if raw_val is None:
-                # Secondary regex search for JSON embedded in the page
-                json_match = re.search(r'"observation_value"\s*:\s*"([\d\.]+)"', r.text)
-                if json_match:
-                    raw_val = float(json_match.group(1))
-                    
-            if raw_val is not None:
-                records.append(SignalRecord(
-                    ticker="MACRO",
-                    signal_type="PMI_NOWCAST",
-                    value=raw_val / 100.0,
-                    raw_value=raw_val,
-                    source=self.name,
-                    timestamp=now,
-                    cost_tier='FREE_PROXY'
-                ))
-                print(f"[{self.name} Plugin] Successfully fetched PMI: {raw_val}")
-                return records
-                
-        except Exception as e:
-            print(f"[{self.name} Plugin] Failed to fetch live PMI from FRED: {e}.")
-            
-        if STRICT_LIVE_MODE:
-            raise RuntimeError(f"[{self.name} Plugin] PMI unavailable in strict live mode; refusing stale fallback.")
+        print(f"[{self.name}] Fetching ISM Manufacturing PMI...")
+        now = datetime.now(timezone.utc).isoformat()
 
-        # Non-strict fallback mode only.
-        print(f"[{self.name} Plugin] Fallback to recent known baseline because strict live mode is disabled.")
-        records.append(SignalRecord(
+        result = self._read_csv_bridge()
+        if result is not None:
+            raw_val = result['value']
+            obs_date = result['date'] or now
+            print(f"[{self.name}] ISM Manufacturing PMI: {raw_val} (from {result['path']}, date: {obs_date})")
+            return [SignalRecord(
+                ticker="MACRO",
+                signal_type="PMI_NOWCAST",
+                value=raw_val / 100.0,
+                raw_value=raw_val,
+                source=self.name,
+                timestamp=obs_date,
+                cost_tier='FREE',
+            )]
+
+        # No CSV bridge available
+        if STRICT_LIVE_MODE:
+            raise RuntimeError(
+                f"[{self.name}] PMI CSV bridge not found at any path: {_CSV_PATHS}. "
+                "Update data/pmi_temp_bridge.csv with the latest ISM Manufacturing PMI."
+            )
+
+        print(f"[{self.name}] WARNING: No PMI CSV found. Using last known baseline (strict mode disabled).")
+        return [SignalRecord(
             ticker="MACRO",
             signal_type="PMI_NOWCAST",
-            value=0.503,
-            raw_value=50.3,
-            source=self.name,
+            value=0.527,
+            raw_value=52.7,
+            source=f"{self.name}_FALLBACK",
             timestamp=now,
-            cost_tier='FALLBACK'
-        ))
+            cost_tier='FALLBACK',
+        )]
 
-        return records
 
 if __name__ == '__main__':
     plugin = PmiPlugin()

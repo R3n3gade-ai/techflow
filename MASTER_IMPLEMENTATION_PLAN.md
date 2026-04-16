@@ -1,7 +1,7 @@
 ﻿# Achelion ARMS — Master Implementation Plan
-**Last Updated: April 13, 2026**
+**Last Updated: April 16, 2026**
 
-> Status: **ALL APPLICATION CODE COMPLETE**. Only external API connections and infrastructure provisioning remain.
+> Status: **ALL APPLICATION CODE COMPLETE**. Data feeds rewired to production architecture. EDR advisory integration complete. Only external API key configuration and infrastructure provisioning remain.
 
 ---
 
@@ -107,6 +107,62 @@ loop (`main.py`). The system runs in development/offline mode using local JSON f
 **To go live, the following external connections must be configured in `.env`:**
 
 See `docs/ARMS_API_CONNECTIONS_REQUIRED.md` for the full checklist.
+
+---
+
+## April 16, 2026 — Production Data Feed & EDR Integration Sprint
+
+### Data Feed Architecture (Cleaned)
+
+Removed 4 unnecessary crypto/skew plugins (okx_feed.py, bybit_feed.py, glassnode_feed.py, skew_plugin.py).
+Consolidated to 4 production feeds only:
+
+| Feed | Plugin | Signals |
+|------|--------|---------|
+| FRED API | `data_feeds/fred_plugin.py` | VIX, HY Spread, 10Y Yield, T10Y2Y, Equity PCR, Margin Debt |
+| IBKR | `data_feeds/crypto_plugin.py` | CME Futures Basis, OI, Stablecoin Pegs, CBOE SKEW |
+| CoinGlass | `data_feeds/coinglass_feed.py` | BTC Funding, OI, Liquidations, Long/Short Ratio, BTC Price |
+| ISM PMI | `data_feeds/pmi_plugin.py` | PMI_NOWCAST (CSV bridge — manual monthly update) |
+
+All synthetic fallbacks removed from FRED. No mocks. No temp data except PMI CSV bridge.
+
+### ARAS EDR Advisory Integration (Addendum 7/8)
+
+Wired deleveraging_risk and crypto_microstructure advisory contributions into ARAS:
+
+| Score Range | Advisory Contribution | Regime Pressure |
+|-------------|----------------------|-----------------|
+| 0.00 – 0.40 | +0.00 | Normal |
+| 0.40 – 0.60 | +0.02 | Toward WATCH |
+| 0.60 – 0.75 | +0.04 | Toward NEUTRAL |
+| 0.75 – 1.00 | +0.06 | Toward DEFENSIVE |
+
+- Max individual: +0.06. Max combined dual-module: +0.12.
+- Dual-module alert fires when both > 0.60 (Oct 10 2025 signature).
+- `ArasOutput` now includes `dual_edr_alert` and `edr_advisory_total` fields.
+- All advisory pressure is upward only — never relaxes the ceiling.
+
+### Files Modified
+
+| File | Change |
+|------|--------|
+| `data_feeds/pipeline.py` | Rewritten — 4 production feeds only |
+| `data_feeds/fred_plugin.py` | Added T10Y2Y + EQUITY_PCR, removed all synthetic fallbacks |
+| `data_feeds/pmi_plugin.py` | Rewritten — ISM PMI from CSV bridge |
+| `data_feeds/coinglass_feed.py` | Rewritten — single crypto API with long/short + BTC price |
+| `data_feeds/crypto_plugin.py` | Added CBOE SKEW fetch via IBKR |
+| `engine/aras.py` | EDR advisory contributions + dual-module alert |
+| `main.py` | Wired EDR scores into ARAS, added dual-alert logging |
+
+### Files Deleted
+
+| File | Reason |
+|------|--------|
+| `data_feeds/skew_plugin.py` | CBOE SKEW moved to IBKR crypto_plugin |
+| `data_feeds/okx_feed.py` | Consolidated into CoinGlass |
+| `data_feeds/bybit_feed.py` | Consolidated into CoinGlass |
+| `data_feeds/glassnode_feed.py` | Consolidated into CoinGlass |
+| `src/_check_crypto.py` | One-off diagnostic script |
 
 ---
 

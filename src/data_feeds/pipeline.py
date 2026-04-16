@@ -1,49 +1,60 @@
 # src/data_feeds/pipeline.py
-# The main orchestrator for the data ingestion pipeline.
+# Production data ingestion pipeline. No mocks. No synthetic fallbacks.
 
-import os
+import logging
 from typing import List
 
 from .interfaces import FeedPlugin, SignalRecord
 from .fred_plugin import FredPlugin
 from .crypto_plugin import CryptoPlugin
 from .pmi_plugin import PmiPlugin
+from .coinglass_feed import CoinglassPlugin
 
-STRICT_LIVE_MODE = os.environ.get('ARMS_STRICT_LIVE', '1').strip().lower() not in {'0', 'false', 'no'}
+logger = logging.getLogger(__name__)
+
 
 class DataPipeline:
     """
-    Initializes and runs all available data feed plugins.
+    Production data feed pipeline.
     
-    NOTE: This pipeline follows the "receptor" pattern from FSD v1.1.
-    New plugins (e.g., SecEdgarPlugin) will be added here as they are developed.
+    Feed Architecture:
+      FRED        — Macro: VIX, yields, HY spread, T10Y2Y, PCR, margin debt
+      IBKR        — CME futures basis, OI, stablecoin pegs, CBOE SKEW
+      CoinGlass   — Crypto derivatives: funding, OI, liquidations, long/short
+      PMI (CSV)   — ISM Manufacturing PMI (manual monthly update)
+    
+    If a critical feed fails, the pipeline errors.
+    CoinGlass failure is non-critical (crypto modules degrade gracefully).
     """
     
     def __init__(self):
-        # In strict live mode, critical regime inputs must be present and sourced.
-        self.plugins: List[FeedPlugin] = [FredPlugin(), CryptoPlugin(), PmiPlugin()]
-        print(f"[DataPipeline] Initialized with {len(self.plugins)} specified plugin(s). Strict={STRICT_LIVE_MODE}")
+        self.plugins: List[FeedPlugin] = [
+            FredPlugin(),       # FRED API (requires FRED_API_KEY)
+            CryptoPlugin(),     # IBKR live market data (requires IB Gateway)
+            PmiPlugin(),        # ISM PMI from CSV bridge (data/pmi_temp_bridge.csv)
+            CoinglassPlugin(),  # CoinGlass public API (free, no auth)
+        ]
+        print(f"[DataPipeline] Initialized with {len(self.plugins)} production feed(s).")
 
     def run_all_feeds(self) -> List[SignalRecord]:
         """
-        Runs the fetch() method on all initialized plugins and aggregates
-        their results into a single list of SignalRecords.
+        Runs all feed plugins. FRED/IBKR/PMI are critical.
+        CoinGlass is non-critical — logs warning on failure.
         """
         all_signals = []
         print(f"[DataPipeline] Running {len(self.plugins)} feed(s)...")
-        failures = []
         for plugin in self.plugins:
             try:
                 signals = plugin.fetch()
                 all_signals.extend(signals)
-                print(f"[DataPipeline]   - {plugin.name}: OK, returned {len(signals)} record(s).")
+                print(f"[DataPipeline]   - {plugin.name}: OK, {len(signals)} record(s).")
             except Exception as e:
-                print(f"[DataPipeline]   - {plugin.name}: FAILED with error: {e}")
-                failures.append((plugin.name, str(e)))
-
-        if STRICT_LIVE_MODE and failures:
-            joined = "; ".join([f"{name}: {err}" for name, err in failures])
-            raise RuntimeError(f"Strict live data pipeline failed: {joined}")
+                if plugin.name == "COINGLASS":
+                    logger.warning("[DataPipeline] CoinGlass failed (non-critical): %s", e)
+                    print(f"[DataPipeline]   - {plugin.name}: FAILED (non-critical): {e}")
+                else:
+                    print(f"[DataPipeline]   - {plugin.name}: FAILED: {e}")
+                    raise
         
-        print(f"[DataPipeline] Run complete. Total records fetched: {len(all_signals)}")
+        print(f"[DataPipeline] Complete. Total records: {len(all_signals)}")
         return all_signals
